@@ -1,5 +1,6 @@
 import { chromium, Browser, BrowserContext, Page, ElementHandle } from 'playwright';
 import { Logger } from '../core/logger.js';
+import { OCREngine } from '../ocr/ocr-engine.js';
 import type { 
   BrowserSettings, 
   NavigationResult, 
@@ -8,7 +9,8 @@ import type {
   BoundingBox,
   PageMetadata,
   FieldMapping,
-  CSVRow
+  CSVRow,
+  OCRSettings
 } from '../types/index.js';
 
 export interface BrowserAgentOptions {
@@ -16,6 +18,8 @@ export interface BrowserAgentOptions {
   headless?: boolean;
   slowMo?: number;
   recordVideo?: boolean;
+  ocrSettings?: OCRSettings;
+  enableOCRFallback?: boolean;
 }
 
 export class BrowserAgent {
@@ -24,10 +28,18 @@ export class BrowserAgent {
   private page: Page | null = null;
   private logger: Logger;
   private settings: BrowserSettings;
+  private ocrEngine: OCREngine | null = null;
+  private enableOCRFallback: boolean;
 
   constructor(options: BrowserAgentOptions) {
     this.logger = Logger.getInstance();
     this.settings = options.settings;
+    this.enableOCRFallback = options.enableOCRFallback ?? true;
+    
+    // Initialize OCR Engine if enabled
+    if (this.enableOCRFallback && options.ocrSettings) {
+      this.ocrEngine = new OCREngine({ settings: options.ocrSettings });
+    }
   }
 
   /**
@@ -62,9 +74,21 @@ export class BrowserAgent {
       this.page.setDefaultTimeout(this.settings.timeout);
       this.page.setDefaultNavigationTimeout(this.settings.timeout);
 
+      // Initialize OCR Engine if enabled
+      if (this.enableOCRFallback && this.ocrEngine) {
+        try {
+          await this.ocrEngine.initialize();
+          this.logger.info('OCR fallback enabled and initialized');
+        } catch (error) {
+          this.logger.warn('OCR initialization failed, continuing without OCR fallback', error);
+          this.enableOCRFallback = false;
+        }
+      }
+
       this.logger.info('Browser agent initialized successfully', {
         viewport: this.settings.viewport,
-        headless: this.settings.headless
+        headless: this.settings.headless,
+        ocrFallback: this.enableOCRFallback
       });
 
     } catch (error) {
@@ -232,9 +256,46 @@ export class BrowserAgent {
   }> {
     if (!this.page) throw new Error('Page not available');
 
+    // First try DOM extraction
+    const domResult = await this.tryDOMExtraction(mapping);
+    
+    // If DOM extraction was successful, return it
+    if (domResult.confidence > 0.5) {
+      return domResult;
+    }
+
+    // If DOM failed and OCR is enabled, try OCR fallback
+    if (this.enableOCRFallback && this.ocrEngine) {
+      this.logger.debug(`DOM extraction confidence low (${domResult.confidence}), trying OCR fallback for ${mapping.csvField}`);
+      
+      try {
+        const ocrResult = await this.tryOCRExtraction(mapping);
+        
+        // Return the best result
+        if (ocrResult.confidence > domResult.confidence) {
+          return ocrResult;
+        }
+      } catch (error) {
+        this.logger.warn(`OCR fallback failed for ${mapping.csvField}`, error);
+      }
+    }
+
+    // Return the original DOM result (even if poor)
+    return domResult;
+  }
+
+  /**
+   * Try DOM extraction for a field mapping
+   */
+  private async tryDOMExtraction(mapping: FieldMapping): Promise<{
+    value: any;
+    method: string;
+    confidence: number;
+    element?: ElementHandle;
+  }> {
     try {
       // Try to find element using the selector
-      const element = await this.page.$(mapping.webSelector);
+      const element = await this.page!.$(mapping.webSelector);
       
       if (!element) {
         return {
@@ -289,6 +350,95 @@ export class BrowserAgent {
         method: 'dom_error',
         confidence: 0
       };
+    }
+  }
+
+  /**
+   * Try OCR extraction for a field mapping
+   */
+  private async tryOCRExtraction(mapping: FieldMapping): Promise<{
+    value: any;
+    method: string;
+    confidence: number;
+    element?: ElementHandle;
+  }> {
+    if (!this.ocrEngine || !this.page) {
+      throw new Error('OCR engine not available');
+    }
+
+    try {
+      // Try to find the element first for targeted extraction
+      const element = await this.page.$(mapping.webSelector);
+      let screenshotBuffer: Buffer;
+      let extractionMethod = 'ocr_fullpage';
+
+      if (element) {
+        // Get element bounding box and take targeted screenshot
+        const boundingBox = await element.boundingBox();
+        if (boundingBox) {
+          screenshotBuffer = await this.page.screenshot({
+            clip: {
+              x: Math.max(0, boundingBox.x - 10),
+              y: Math.max(0, boundingBox.y - 10),
+              width: Math.min(boundingBox.width + 20, await this.page.evaluate(() => window.innerWidth)),
+              height: Math.min(boundingBox.height + 20, await this.page.evaluate(() => window.innerHeight))
+            }
+          });
+          extractionMethod = 'ocr_element';
+        } else {
+          screenshotBuffer = await this.page.screenshot({ fullPage: false });
+        }
+      } else {
+        // Take full page screenshot if element not found
+        screenshotBuffer = await this.page.screenshot({ fullPage: false });
+      }
+
+      // Extract text using OCR with preprocessing
+      const ocrResult = await this.ocrEngine.extractTextWithPreprocessing(screenshotBuffer, {
+        enhanceContrast: true,
+        denoise: true,
+        scale: 2 // Upscale for better OCR accuracy
+      });
+
+      // Search for the expected field value in OCR results
+      let bestMatch = null;
+      let bestConfidence = 0;
+
+      // If we have context about what we're looking for, try to find it
+      if (mapping.csvField && ocrResult.words.length > 0) {
+        // Look for words with high confidence
+        const highConfidenceWords = ocrResult.words.filter(word => word.confidence > 0.7);
+        
+        if (highConfidenceWords.length > 0) {
+          // For now, take the first high-confidence word
+          // In a real implementation, you'd use more sophisticated matching
+          bestMatch = highConfidenceWords[0].text;
+          bestConfidence = Math.min(0.8, highConfidenceWords[0].confidence); // Cap OCR confidence
+        } else if (ocrResult.words.length > 0) {
+          bestMatch = ocrResult.words[0].text;
+          bestConfidence = Math.min(0.6, ocrResult.words[0].confidence);
+        }
+      }
+
+      // Normalize the value based on field type
+      const normalizedValue = this.normalizeExtractedValue(bestMatch, mapping.fieldType);
+
+      this.logger.debug(`OCR extraction completed for ${mapping.csvField}`, {
+        wordsFound: ocrResult.words.length,
+        confidence: bestConfidence,
+        extractedValue: normalizedValue
+      });
+
+      return {
+        value: normalizedValue,
+        method: extractionMethod,
+        confidence: bestConfidence,
+        element
+      };
+
+    } catch (error) {
+      this.logger.error(`OCR extraction failed for ${mapping.csvField}`, error);
+      throw error;
     }
   }
 
@@ -459,6 +609,12 @@ export class BrowserAgent {
       if (this.browser) {
         await this.browser.close();
         this.browser = null;
+      }
+
+      // Cleanup OCR engine if enabled
+      if (this.ocrEngine) {
+        await this.ocrEngine.cleanup();
+        this.ocrEngine = null;
       }
 
       this.logger.debug('Browser agent closed successfully');

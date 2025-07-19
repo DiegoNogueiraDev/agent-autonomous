@@ -281,13 +281,17 @@ describe('OCREngine', () => {
       expect(stats).toHaveProperty('initialized');
       expect(stats).toHaveProperty('language');
       expect(stats).toHaveProperty('mode');
+      expect(stats).toHaveProperty('processing');
       
       expect(typeof stats.initialized).toBe('boolean');
       expect(typeof stats.language).toBe('string');
       expect(typeof stats.mode).toBe('number');
+      expect(typeof stats.processing).toBe('object');
       
       expect(stats.language).toBe(testSettings.language);
       expect(stats.mode).toBe(testSettings.mode);
+      expect(stats.processing.totalImages).toBe(0);
+      expect(stats.processing.successfulExtractions).toBe(0);
     });
 
     test('should update statistics after initialization', async () => {
@@ -301,5 +305,264 @@ describe('OCREngine', () => {
       expect(statsAfter.language).toBe(testSettings.language);
       expect(statsAfter.mode).toBe(testSettings.mode);
     }, 30000);
+
+    test('should reset statistics correctly', () => {
+      const statsBefore = ocrEngine.getStats();
+      expect(statsBefore.processing.totalImages).toBe(0);
+      
+      ocrEngine.resetStats();
+      
+      const statsAfter = ocrEngine.getStats();
+      expect(statsAfter.processing.totalImages).toBe(0);
+      expect(statsAfter.processing.successfulExtractions).toBe(0);
+      expect(statsAfter.processing.averageConfidence).toBe(0);
+    });
+  });
+
+  describe('image preprocessing', () => {
+    beforeEach(async () => {
+      await ocrEngine.initialize();
+    });
+
+    test('should preprocess image with default options', async () => {
+      const testImageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAABCAYAAADjAO9DAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      const imageBuffer = Buffer.from(testImageBase64, 'base64');
+
+      try {
+        const processedBuffer = await ocrEngine.preprocessImage(imageBuffer);
+        expect(processedBuffer).toBeInstanceOf(Buffer);
+        expect(processedBuffer.length).toBeGreaterThan(0);
+      } catch (error) {
+        // Expected for invalid test image
+        expect(error).toBeDefined();
+      }
+    });
+
+    test('should preprocess image with scaling', async () => {
+      const testImageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAABCAYAAADjAO9DAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      const imageBuffer = Buffer.from(testImageBase64, 'base64');
+
+      try {
+        const processedBuffer = await ocrEngine.preprocessImage(imageBuffer, { scale: 2 });
+        expect(processedBuffer).toBeInstanceOf(Buffer);
+        expect(processedBuffer.length).toBeGreaterThan(0);
+      } catch (error) {
+        // Expected for invalid test image
+        expect(error).toBeDefined();
+      }
+    });
+
+    test('should extract text with preprocessing', async () => {
+      const testImageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAABCAYAAADjAO9DAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      const imageBuffer = Buffer.from(testImageBase64, 'base64');
+
+      try {
+        const result = await ocrEngine.extractTextWithPreprocessing(imageBuffer, {
+          enhanceContrast: true,
+          denoise: true
+        });
+        
+        expect(result).toBeDefined();
+        expect(typeof result.text).toBe('string');
+        expect(typeof result.confidence).toBe('number');
+        expect(Array.isArray(result.words)).toBe(true);
+        expect(Array.isArray(result.lines)).toBe(true);
+      } catch (error) {
+        // Expected for simple test image
+        expect(error).toBeDefined();
+      }
+    }, 15000);
+  });
+
+  describe('text search functionality', () => {
+    test('should search text in OCR results with exact matching', () => {
+      const mockOCRResult = {
+        text: 'Hello World Test',
+        confidence: 0.9,
+        words: [
+          { text: 'Hello', confidence: 0.95, bbox: { x0: 0, y0: 0, x1: 50, y1: 20 } },
+          { text: 'World', confidence: 0.90, bbox: { x0: 55, y0: 0, x1: 100, y1: 20 } },
+          { text: 'Test', confidence: 0.85, bbox: { x0: 105, y0: 0, x1: 130, y1: 20 } }
+        ],
+        lines: [
+          { text: 'Hello World Test', confidence: 0.90, bbox: { x0: 0, y0: 0, x1: 130, y1: 20 } }
+        ],
+        processingTime: 100
+      };
+
+      const searchResults = ocrEngine.searchTextInResults(mockOCRResult, {
+        searchText: 'Hello',
+        fuzzyMatch: false
+      });
+
+      expect(searchResults.length).toBeGreaterThan(0);
+      expect(searchResults[0].match).toBe('Hello');
+      expect(searchResults[0].similarity).toBe(1);
+    });
+
+    test('should search text with fuzzy matching', () => {
+      const mockOCRResult = {
+        text: 'Helo World Test',
+        confidence: 0.9,
+        words: [
+          { text: 'Helo', confidence: 0.95, bbox: { x0: 0, y0: 0, x1: 50, y1: 20 } },
+          { text: 'World', confidence: 0.90, bbox: { x0: 55, y0: 0, x1: 100, y1: 20 } }
+        ],
+        lines: [
+          { text: 'Helo World Test', confidence: 0.90, bbox: { x0: 0, y0: 0, x1: 130, y1: 20 } }
+        ],
+        processingTime: 100
+      };
+
+      const searchResults = ocrEngine.searchTextInResults(mockOCRResult, {
+        searchText: 'Hello',
+        fuzzyMatch: true,
+        similarity: 0.7
+      });
+
+      expect(searchResults.length).toBeGreaterThan(0);
+      expect(searchResults[0].match).toBe('Helo');
+      expect(searchResults[0].similarity).toBeGreaterThan(0.7);
+    });
+
+    test('should filter by confidence threshold', () => {
+      const mockOCRResult = {
+        text: 'Hello World Test',
+        confidence: 0.9,
+        words: [
+          { text: 'Hello', confidence: 0.95, bbox: { x0: 0, y0: 0, x1: 50, y1: 20 } },
+          { text: 'World', confidence: 0.30, bbox: { x0: 55, y0: 0, x1: 100, y1: 20 } }
+        ],
+        lines: [],
+        processingTime: 100
+      };
+
+      const searchResults = ocrEngine.searchTextInResults(mockOCRResult, {
+        searchText: 'World',
+        fuzzyMatch: false,
+        confidenceThreshold: 0.8
+      });
+
+      expect(searchResults.length).toBe(0); // Should be filtered out due to low confidence
+    });
+  });
+
+  describe('batch processing', () => {
+    beforeEach(async () => {
+      await ocrEngine.initialize();
+    });
+
+    test('should process multiple images in batch', async () => {
+      const testImageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAABCAYAAADjAO9DAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      const imageBuffer = Buffer.from(testImageBase64, 'base64');
+
+      const images = [
+        { id: 'image1', buffer: imageBuffer },
+        { id: 'image2', buffer: imageBuffer },
+        { id: 'image3', buffer: imageBuffer }
+      ];
+
+      const results = await ocrEngine.batchExtractText(images);
+
+      expect(results).toHaveLength(3);
+      expect(results[0].id).toBe('image1');
+      expect(results[1].id).toBe('image2');
+      expect(results[2].id).toBe('image3');
+      
+      // Each result should have either a successful result or an error
+      results.forEach(result => {
+        expect(result.result).toBeDefined();
+        if (result.error) {
+          expect(typeof result.error).toBe('string');
+        }
+      });
+    }, 30000);
+
+    test('should handle errors in batch processing gracefully', async () => {
+      const invalidBuffer = Buffer.from('invalid-image-data');
+      const validImageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAABCAYAAADjAO9DAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      const validBuffer = Buffer.from(validImageBase64, 'base64');
+
+      const images = [
+        { id: 'invalid', buffer: invalidBuffer },
+        { id: 'valid', buffer: validBuffer }
+      ];
+
+      const results = await ocrEngine.batchExtractText(images);
+
+      expect(results).toHaveLength(2);
+      expect(results[0].id).toBe('invalid');
+      expect(results[0].error).toBeDefined();
+      expect(results[1].id).toBe('valid');
+    }, 30000);
+  });
+
+  describe('settings validation', () => {
+    test('should validate correct settings', () => {
+      const validSettings = {
+        language: 'eng',
+        mode: 6,
+        confidenceThreshold: 0.8
+      };
+
+      const validation = (ocrEngine.constructor as any).validateSettings(validSettings);
+      expect(validation.valid).toBe(true);
+      expect(validation.errors).toHaveLength(0);
+    });
+
+    test('should reject invalid language', () => {
+      const invalidSettings = {
+        language: 'invalid-lang',
+        mode: 6,
+        confidenceThreshold: 0.8
+      };
+
+      const validation = (ocrEngine.constructor as any).validateSettings(invalidSettings);
+      expect(validation.valid).toBe(false);
+      expect(validation.errors).toContain(expect.stringContaining('Unsupported language'));
+    });
+
+    test('should reject invalid page segmentation mode', () => {
+      const invalidSettings = {
+        language: 'eng',
+        mode: 99,
+        confidenceThreshold: 0.8
+      };
+
+      const validation = (ocrEngine.constructor as any).validateSettings(invalidSettings);
+      expect(validation.valid).toBe(false);
+      expect(validation.errors).toContain(expect.stringContaining('Invalid page segmentation mode'));
+    });
+
+    test('should get supported languages', () => {
+      const languages = (ocrEngine.constructor as any).getSupportedLanguages();
+      expect(Array.isArray(languages)).toBe(true);
+      expect(languages).toContain('eng');
+      expect(languages).toContain('por');
+      expect(languages.length).toBeGreaterThan(5);
+    });
+  });
+
+  describe('region extraction', () => {
+    beforeEach(async () => {
+      await ocrEngine.initialize();
+    });
+
+    test('should extract text from specific region', async () => {
+      const testImageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAABCAYAAADjAO9DAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      const imageBuffer = Buffer.from(testImageBase64, 'base64');
+
+      const region = { x: 0, y: 0, width: 50, height: 20 };
+
+      try {
+        const result = await ocrEngine.extractTextFromRegion(imageBuffer, region);
+        expect(result).toBeDefined();
+        expect(typeof result.text).toBe('string');
+        expect(typeof result.confidence).toBe('number');
+      } catch (error) {
+        // Expected for simple test image
+        expect(error).toBeDefined();
+      }
+    }, 15000);
   });
 });

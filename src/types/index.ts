@@ -169,18 +169,42 @@ export interface PageMetadata {
 export interface OCRResult {
   text: string;
   confidence: number;
-  boundingBox: BoundingBox;
-  preprocessing: string[];
-  language: string;
+  words: OCRWord[];
+  lines: OCRLine[];
   processingTime: number;
+  boundingBox?: BoundingBox;
+  preprocessing?: string[] | null;
+  language?: string;
+}
+
+export interface OCRWord {
+  text: string;
+  confidence: number;
+  bbox: BoundingBox;
+}
+
+export interface OCRLine {
+  text: string;
+  confidence: number;
+  bbox: BoundingBox;
+}
+
+export interface BoundingBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
 }
 
 export interface OCRSettings {
-  languages: string[];
-  engineMode: number;
-  pageSegMode: number;
-  preprocessing: PreprocessingStep[];
-  dpi: number;
+  language: string;
+  mode: number;
+  confidenceThreshold?: number;
+  whitelist?: string;
+  imagePreprocessing?: {
+    enabled: boolean;
+    operations: string[];
+  };
 }
 
 export type PreprocessingStep = 
@@ -532,29 +556,3 @@ export type OCROperation =
   | 'noise_reduction'
   | 'contrast_enhance';
 
-export interface OCRResult {
-  text: string;
-  confidence: number;
-  words: OCRWord[];
-  lines: OCRLine[];
-  processingTime: number;
-}
-
-export interface OCRWord {
-  text: string;
-  confidence: number;
-  bbox: BoundingBox;
-}
-
-export interface OCRLine {
-  text: string;
-  confidence: number;
-  bbox: BoundingBox;
-}
-
-export interface BoundingBox {
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-}
