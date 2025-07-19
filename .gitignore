@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+*.venv
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+*.egg
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# dotenv
+.env
+.env.*
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Node
+node_modules/
+
+# OS generated files
+Thumbs.db
+
+# Test coverage
+htmlcov/
+.coverage
+.tox/
+.pytest_cache/
+
+# Others
+*.sqlite3
+*.db
+data/
+models/

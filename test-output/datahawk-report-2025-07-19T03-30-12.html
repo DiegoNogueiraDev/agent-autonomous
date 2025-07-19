@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataHawk Validation Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 8px; }
+        .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .metric { background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #007bff; }
+        .metric-value { font-size: 24px; font-weight: bold; color: #007bff; }
+        .success { border-left-color: #28a745; }
+        .success .metric-value { color: #28a745; }
+        .warning { border-left-color: #ffc107; }
+        .warning .metric-value { color: #ffc107; }
+        .error { border-left-color: #dc3545; }
+        .error .metric-value { color: #dc3545; }
+        .results-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .results-table th, .results-table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        .results-table th { background: #f8f9fa; font-weight: bold; }
+        .status-success { color: #28a745; font-weight: bold; }
+        .status-failed { color: #dc3545; font-weight: bold; }
+        .confidence { padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        .confidence-high { background: #d4edda; color: #155724; }
+        .confidence-medium { background: #fff3cd; color: #856404; }
+        .confidence-low { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🦅 DataHawk Validation Report</h1>
+        <p>Generated: 19/07/2025, 00:30:12</p>
+        <p>Report ID: report_1752895812015</p>
+    </div>
+
+    <div class="summary">
+        <div class="metric success">
+            <div class="metric-value">5</div>
+            <div>Rows Processed</div>
+        </div>
+        <div class="metric success">
+            <div class="metric-value">100%</div>
+            <div>Success Rate</div>
+        </div>
+        <div class="metric success">
+            <div class="metric-value">95%</div>
+            <div>Avg Confidence</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value">0s</div>
+            <div>Processing Time</div>
+        </div>
+    </div>
+
+    <h2>📊 Performance Metrics</h2>
+    <div class="summary">
+        <div class="metric">
+            <div class="metric-value">11ms</div>
+            <div>Avg Time/Row</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value">11MB</div>
+            <div>Peak Memory</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value">0%</div>
+            <div>Error Rate</div>
+        </div>
+    </div>
+
+    <h2>📋 Validation Results</h2>
+    <table class="results-table">
+        <thead>
+            <tr>
+                <th>Row ID</th>
+                <th>Status</th>
+                <th>Confidence</th>
+                <th>Processing Time</th>
+                <th>Errors</th>
+            </tr>
+        </thead>
+        <tbody>
+            
+                <tr>
+                    <td>1</td>
+                    <td class="status-success">
+                        ✅ PASS
+                    </td>
+                    <td>
+                        <span class="confidence confidence-high">
+                            95%
+                        </span>
+                    </td>
+                    <td>50ms</td>
+                    <td>0</td>
+                </tr>
+            
+                <tr>
+                    <td>2</td>
+                    <td class="status-success">
+                        ✅ PASS
+                    </td>
+                    <td>
+                        <span class="confidence confidence-high">
+                            95%
+                        </span>
+                    </td>
+                    <td>50ms</td>
+                    <td>0</td>
+                </tr>
+            
+                <tr>
+                    <td>3</td>
+                    <td class="status-success">
+                        ✅ PASS
+                    </td>
+                    <td>
+                        <span class="confidence confidence-high">
+                            95%
+                        </span>
+                    </td>
+                    <td>50ms</td>
+                    <td>0</td>
+                </tr>
+            
+                <tr>
+                    <td>4</td>
+                    <td class="status-success">
+                        ✅ PASS
+                    </td>
+                    <td>
+                        <span class="confidence confidence-high">
+                            95%
+                        </span>
+                    </td>
+                    <td>50ms</td>
+                    <td>0</td>
+                </tr>
+            
+                <tr>
+                    <td>5</td>
+                    <td class="status-success">
+                        ✅ PASS
+                    </td>
+                    <td>
+                        <span class="confidence confidence-high">
+                            95%
+                        </span>
+                    </td>
+                    <td>50ms</td>
+                    <td>0</td>
+                </tr>
+            
+        </tbody>
+    </table>
+
+    <h2>📈 Confidence Distribution</h2>
+    <div class="summary">
+        
+            <div class="metric">
+                <div class="metric-value">5</div>
+                <div>high (0.9-1.0)</div>
+            </div>
+        
+            <div class="metric">
+                <div class="metric-value">0</div>
+                <div>medium (0.7-0.9)</div>
+            </div>
+        
+            <div class="metric">
+                <div class="metric-value">0</div>
+                <div>low (0.5-0.7)</div>
+            </div>
+        
+            <div class="metric">
+                <div class="metric-value">0</div>
+                <div>very_low (0-0.5)</div>
+            </div>
+        
+    </div>
+
+    <footer style="margin-top: 40px; text-align: center; color: #6c757d; border-top: 1px solid #ddd; padding-top: 20px;">
+        <p>Generated by DataHawk v1.0.0</p>
+    </footer>
+</body>
+</html>
