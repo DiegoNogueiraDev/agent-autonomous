@@ -85,7 +85,51 @@ await llmEngine.initialize();
 // ✅ Batch processing com concorrência limitada
 ```
 
-### **4. Navegação Web Automatizada**
+### **4. CrewAI Multi-Agent Orchestration**
+
+#### **4.1. Agent Initialization (src/agents/crew-orchestrator.ts)**
+```typescript
+const crewConfig: CrewConfig = {
+  maxConcurrentTasks: 4,
+  taskTimeout: 30000,
+  retryAttempts: 2,
+  agentHealthCheck: true,
+  performanceMonitoring: true
+};
+const crewOrchestrator = new CrewOrchestrator(crewConfig);
+```
+
+**Agentes Especializados:**
+- ✅ **Navigator Agent** - Especialista em navegação web
+- ✅ **Extractor Agent** - Especialista em extração de dados DOM
+- ✅ **OCR Specialist** - Especialista em OCR e processamento de imagens
+- ✅ **Validator Agent** - Especialista em validação via LLM
+- ✅ **Evidence Collector** - Especialista em coleta de evidências
+- ✅ **Coordinator Agent** - Coordenador de recursos e tarefas
+
+#### **4.2. Multi-Agent Execution Pipeline**
+```typescript
+// Fase 1: Navegação (Navigator Agent)
+const navigationResult = await crewOrchestrator.executeNavigationPhase(csvRow, config);
+
+// Fase 2: Extração Paralela (Extractor + OCR Agents)
+const extractionResults = await crewOrchestrator.executeExtractionPhase(fieldMappings);
+
+// Fase 3: Validação (Validator Agent)
+const validationResults = await crewOrchestrator.executeValidationPhase(csvRow, extractionResults, fieldMappings);
+
+// Fase 4: Coleta de Evidências (Evidence Agent)
+const evidenceResult = await crewOrchestrator.executeEvidencePhase(csvRow, extractionResults);
+```
+
+**Benefícios da Arquitetura CrewAI:**
+- ✅ **Processamento paralelo** com agentes especializados
+- ✅ **Monitoramento de performance** por agente
+- ✅ **Retry automático** com fallback entre agentes
+- ✅ **Resource optimization** baseado em utilização
+- ✅ **Task orchestration** inteligente
+
+### **5. Navegação Web Automatizada**
 
 #### **4.1. Browser Agent Initialization (src/automation/browser-agent.ts)**
 ```typescript
@@ -304,8 +348,16 @@ graph TD
     A[CSV Input] --> B[CSV Loader]
     B --> C[Taskmaster Controller]
     C --> D[Config Manager]
-    C --> E[LLM Engine]
-    C --> F[Browser Agent]
+    C --> CA[CrewAI Orchestrator]
+    
+    CA --> E[LLM Engine]
+    CA --> F[Browser Agent]
+    CA --> NA[Navigator Agent]
+    CA --> EA[Extractor Agent]
+    CA --> OA[OCR Specialist]
+    CA --> VA[Validator Agent]
+    CA --> EV[Evidence Agent]
+    CA --> CO[Coordinator Agent]
     
     E --> G[Python LLM Server]
     G --> H[Llama-3 8B Model]
@@ -329,12 +381,20 @@ graph TD
     style Q fill:#e8f5e8
     style G fill:#fff3e0
     style H fill:#fce4ec
+    style CA fill:#ffe0b2
+    style NA fill:#f3e5f5
+    style EA fill:#f3e5f5
+    style OA fill:#f3e5f5
+    style VA fill:#f3e5f5
+    style EV fill:#f3e5f5
+    style CO fill:#f3e5f5
 ```
 
 ### **Principais Classes e Responsabilidades**
 
 #### **🔸 Core Components**
 - **`TaskmasterController`** - Orquestração principal do fluxo
+- **`CrewOrchestrator`** - Framework multi-agente com 6 agentes especializados
 - **`ConfigManager`** - Gerenciamento de configurações com validação Zod
 - **`CSVLoader`** - Carregamento e parsing de arquivos CSV
 - **`Logger`** - Sistema de logging estruturado com Winston
@@ -560,7 +620,7 @@ watch -n 1 "curl -s http://localhost:8000/health | jq"
 ### **Fase 2: Produtização (Próximas 2-3 semanas)**
 
 #### **🔸 Prioridade ALTA**
-1. **CrewAI Integration** - Framework multi-agente
+1. ✅ **CrewAI Integration** - Framework multi-agente IMPLEMENTADO
 2. **Advanced Validation Rules** - Regras customizadas por domínio
 3. **Performance Optimization** - Atingir meta de 500 linhas/10min
 4. **Error Recovery** - Retry automático com exponential backoff
@@ -599,6 +659,7 @@ O **DataHawk v1.1.0** representa uma implementação completa e robusta de um ag
 
 ### **✅ Funcionalidades Implementadas**
 - **Pipeline E2E completo** do CSV até relatórios
+- **CrewAI Multi-Agent** com 6 agentes especializados orquestrando o processo
 - **LLM local real** com Llama-3 8B + fallback inteligente
 - **OCR avançado** com preprocessing e fuzzy matching
 - **Coleta de evidências** completa para compliance
