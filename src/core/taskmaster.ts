@@ -4,6 +4,7 @@ import { ReportGenerator } from '../reporting/report-generator.js';
 import { BrowserAgent } from '../automation/browser-agent.js';
 import { LocalLLMEngine } from '../llm/local-llm-engine.js';
 import { EvidenceCollector } from '../evidence/evidence-collector.js';
+import { CrewOrchestrator } from '../agents/crew-orchestrator.js';
 import type { 
   ValidationConfig, 
   CSVData, 
@@ -14,7 +15,9 @@ import type {
   BrowserSettings,
   CSVRow,
   LLMSettings,
-  EvidenceSettings
+  EvidenceSettings,
+  CrewConfig,
+  OCRSettings
 } from '../types/index.js';
 
 export interface TaskmasterOptions {
@@ -30,6 +33,7 @@ export class TaskmasterController {
   private browserAgent: BrowserAgent;
   private llmEngine: LocalLLMEngine;
   private evidenceCollector: EvidenceCollector;
+  private crewOrchestrator: CrewOrchestrator;
   private config: ValidationConfig;
 
   constructor(config: ValidationConfig) {
@@ -69,6 +73,16 @@ export class TaskmasterController {
       settings: this.config.evidence,
       baseOutputPath: './data/output' // Default, will be updated in execute()
     });
+
+    // Initialize CrewAI Orchestrator
+    const crewConfig: CrewConfig = {
+      maxConcurrentTasks: 4,
+      taskTimeout: 30000,
+      retryAttempts: 2,
+      agentHealthCheck: true,
+      performanceMonitoring: true
+    };
+    this.crewOrchestrator = new CrewOrchestrator(crewConfig);
   }
 
   /**
@@ -111,6 +125,21 @@ export class TaskmasterController {
       });
       await this.evidenceCollector.initialize();
 
+      this.logger.info('Initializing CrewAI orchestrator...');
+      // Create a temporary OCR engine for CrewAI
+      const { OCREngine } = await import('../ocr/ocr-engine.js');
+      const tempOcrEngine = new OCREngine({ 
+        settings: { language: 'eng+por', mode: 6, confidenceThreshold: 0.7, imagePreprocessing: { enabled: true, operations: ['grayscale', 'contrast_enhance'] } } 
+      });
+      await tempOcrEngine.initialize();
+      
+      await this.crewOrchestrator.initialize(
+        this.browserAgent,
+        this.llmEngine,
+        tempOcrEngine,
+        this.evidenceCollector
+      );
+
       // 4. Process rows with real browser automation
       const results: ValidationResult[] = [];
       const total = csvData.rows.length;
@@ -125,13 +154,24 @@ export class TaskmasterController {
 
           this.logger.debug(`Processing row ${i + 1}/${total}`, { rowId });
 
-          // Navigate to the target URL for this row
-          const navigationResult = await this.browserAgent.navigateToUrl(
-            this.config.targetUrl, 
-            row as CSVRow
+          // Use CrewAI multi-agent orchestration for validation
+          const crewResult = await this.crewOrchestrator.executeRowValidation(
+            row as CSVRow,
+            this.config.fieldMappings,
+            this.config
           );
 
-          let webData: any = {
+          // Extract results from CrewAI orchestration
+          const navigationResult = crewResult.navigationResult || {
+            success: false,
+            url: this.config.targetUrl,
+            loadTime: 0,
+            errors: ['CrewAI navigation failed'],
+            redirects: [],
+            finalUrl: this.config.targetUrl
+          };
+
+          let webData: any = crewResult.extractionResults || {
             domData: {},
             ocrData: {},
             screenshots: [],
@@ -148,36 +188,16 @@ export class TaskmasterController {
           };
 
           const errors: any[] = [];
-          let overallMatch = false;
+          let overallMatch = crewResult.success || false;
           let overallConfidence = 0;
 
-          if (navigationResult.success) {
-            try {
-              // Extract data using field mappings
-              webData = await this.browserAgent.extractWebData(this.config.fieldMappings);
-              
-              // Set basic success metrics - LLM validation will happen below
-              overallMatch = true; // Will be updated by LLM validation
-              overallConfidence = 0.8; // Will be updated by LLM validation
-
-            } catch (extractionError) {
-              this.logger.warn(`Data extraction failed for row ${rowId}`, extractionError);
-              errors.push({
-                type: 'extraction',
-                message: extractionError instanceof Error ? extractionError.message : 'Extraction failed',
-                field: undefined,
-                code: 'EXTRACTION_ERROR',
-                timestamp: new Date(),
-                recoverable: true
-              });
-            }
-          } else {
-            this.logger.warn(`Navigation failed for row ${rowId}`, navigationResult.errors);
+          if (!crewResult.success) {
+            this.logger.warn(`CrewAI validation failed for row ${rowId}`, crewResult.error);
             errors.push({
-              type: 'navigation',
-              message: navigationResult.errors.join(', '),
+              type: 'crew_validation',
+              message: crewResult.error || 'Multi-agent validation failed',
               field: undefined,
-              code: 'NAVIGATION_ERROR',
+              code: 'CREW_ERROR',
               timestamp: new Date(),
               recoverable: true
             });
@@ -186,48 +206,34 @@ export class TaskmasterController {
           const processingTime = Date.now() - rowStartTime;
           let fieldValidations: any[] = [];
 
-          // If we have LLM decisions from extraction, use them
-          if (navigationResult.success && webData.domData) {
-            try {
-              const validationRequests = this.config.fieldMappings.map(mapping => ({
+          // Use validation results from CrewAI if available
+          if (crewResult.validationResults && Array.isArray(crewResult.validationResults)) {
+            fieldValidations = this.config.fieldMappings.map((mapping, index) => {
+              const decision = crewResult.validationResults[index];
+              return {
+                field: mapping.csvField,
                 csvValue: row[mapping.csvField],
-                webValue: webData.domData[mapping.csvField],
-                fieldType: mapping.fieldType,
-                fieldName: mapping.csvField
-              }));
+                webValue: webData.domData?.[mapping.csvField],
+                normalizedCsvValue: decision?.normalizedCsvValue || row[mapping.csvField],
+                normalizedWebValue: decision?.normalizedWebValue || webData.domData?.[mapping.csvField],
+                match: decision?.match || false,
+                confidence: decision?.confidence || 0,
+                method: webData.extractionMethods?.[mapping.csvField] || 'crew_ai',
+                reasoning: decision?.reasoning || 'CrewAI multi-agent validation',
+                fuzzyScore: decision?.confidence || 0
+              };
+            });
 
-              const llmDecisions = await this.llmEngine.batchValidationDecisions(validationRequests);
-              
-              fieldValidations = this.config.fieldMappings.map((mapping, index) => {
-                const decision = llmDecisions[index];
-                return {
-                  field: mapping.csvField,
-                  csvValue: row[mapping.csvField],
-                  webValue: webData.domData[mapping.csvField],
-                  normalizedCsvValue: decision?.normalizedCsvValue || row[mapping.csvField],
-                  normalizedWebValue: decision?.normalizedWebValue || webData.domData[mapping.csvField],
-                  match: decision?.match || false,
-                  confidence: decision?.confidence || 0,
-                  method: webData.extractionMethods[mapping.csvField] || 'unknown',
-                  reasoning: decision?.reasoning || 'No LLM decision available',
-                  fuzzyScore: decision?.confidence || 0
-                };
-              });
+            // Calculate overall metrics from CrewAI results
+            const matchingFields = fieldValidations.filter(v => v.match).length;
+            const requiredFields = this.config.fieldMappings.filter(m => m.required).length;
+            const requiredMatches = fieldValidations.filter(v => {
+              const mapping = this.config.fieldMappings.find(m => m.csvField === v.field);
+              return mapping?.required && v.match;
+            }).length;
 
-              // Update overall match and confidence based on LLM decisions
-              const matchingFields = fieldValidations.filter(v => v.match).length;
-              const requiredFields = this.config.fieldMappings.filter(m => m.required).length;
-              const requiredMatches = fieldValidations.filter(v => {
-                const mapping = this.config.fieldMappings.find(m => m.csvField === v.field);
-                return mapping?.required && v.match;
-              }).length;
-
-              // Must match all required fields to be considered valid
-              overallMatch = requiredMatches === requiredFields && matchingFields > 0;
-              overallConfidence = fieldValidations.reduce((sum, v) => sum + v.confidence, 0) / fieldValidations.length;
-            } catch (llmError) {
-              this.logger.warn(`LLM validation failed for row ${rowId}`, llmError);
-            }
+            overallMatch = requiredMatches === requiredFields && matchingFields > 0;
+            overallConfidence = fieldValidations.reduce((sum, v) => sum + v.confidence, 0) / fieldValidations.length;
           }
 
           const result: ValidationResult = {
@@ -249,17 +255,23 @@ export class TaskmasterController {
             }
           };
 
-          // Collect evidence for this validation
+          // Use evidence from CrewAI or collect new evidence
           try {
-            const evidence = await this.evidenceCollector.collectEvidence(result);
-            // Update result with actual evidence ID
-            result.evidenceId = evidence.id;
-            
-            this.logger.debug('Evidence collected', {
-              rowId,
-              evidenceId: evidence.id,
-              filesCount: evidence.files.length
-            });
+            if (crewResult.evidenceResult?.evidenceId) {
+              result.evidenceId = crewResult.evidenceResult.evidenceId;
+              this.logger.debug('Evidence from CrewAI', {
+                rowId,
+                evidenceId: result.evidenceId
+              });
+            } else {
+              const evidence = await this.evidenceCollector.collectEvidence(result);
+              result.evidenceId = evidence.id;
+              this.logger.debug('Evidence collected', {
+                rowId,
+                evidenceId: evidence.id,
+                filesCount: evidence.files.length
+              });
+            }
           } catch (evidenceError) {
             this.logger.warn('Failed to collect evidence', {
               rowId,
@@ -283,10 +295,11 @@ export class TaskmasterController {
         }
 
       } finally {
-        // Always close browser and LLM engine
+        // Always close browser, LLM engine, and CrewAI orchestrator
         await this.browserAgent.close();
         await this.llmEngine.close();
-        this.logger.info('Browser agent and LLM engine closed');
+        await this.crewOrchestrator.shutdown();
+        this.logger.info('Browser agent, LLM engine, and CrewAI orchestrator closed');
       }
 
       const endTime = Date.now();

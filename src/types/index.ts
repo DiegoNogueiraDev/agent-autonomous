@@ -164,6 +164,35 @@ export interface PageMetadata {
   userAgent: string;
 }
 
+// ==================== CrewAI Types ====================
+
+export interface AgentTask {
+  type: string;
+  description: string;
+  data: any;
+  priority?: 'low' | 'medium' | 'high';
+  timeout?: number;
+}
+
+export interface CrewValidationResult {
+  success: boolean;
+  error?: string;
+  processingTime: number;
+  navigationResult?: any;
+  extractionResults?: any;
+  validationResults?: any;
+  evidenceResult?: any;
+  agentUtilization?: Record<string, any>;
+}
+
+export interface CrewConfig {
+  maxConcurrentTasks: number;
+  taskTimeout: number;
+  retryAttempts: number;
+  agentHealthCheck: boolean;
+  performanceMonitoring: boolean;
+}
+
 // ==================== OCR Types ====================
 
 export interface OCRResult {
@@ -180,32 +209,22 @@ export interface OCRResult {
 export interface OCRWord {
   text: string;
   confidence: number;
-  bbox: BoundingBox;
+  bbox: OCRBoundingBox;
 }
 
 export interface OCRLine {
   text: string;
   confidence: number;
-  bbox: BoundingBox;
+  bbox: OCRBoundingBox;
 }
 
-export interface BoundingBox {
+export interface OCRBoundingBox {
   x0: number;
   y0: number;
   x1: number;
   y1: number;
 }
 
-export interface OCRSettings {
-  language: string;
-  mode: number;
-  confidenceThreshold?: number;
-  whitelist?: string;
-  imagePreprocessing?: {
-    enabled: boolean;
-    operations: string[];
-  };
-}
 
 export type PreprocessingStep = 
   | 'contrast_enhancement'

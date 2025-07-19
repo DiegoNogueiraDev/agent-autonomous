@@ -380,8 +380,8 @@ export class BrowserAgent {
             clip: {
               x: Math.max(0, boundingBox.x - 10),
               y: Math.max(0, boundingBox.y - 10),
-              width: Math.min(boundingBox.width + 20, await this.page.evaluate(() => window.innerWidth)),
-              height: Math.min(boundingBox.height + 20, await this.page.evaluate(() => window.innerHeight))
+              width: Math.min(boundingBox.width + 20, await this.page.evaluate(() => (globalThis as any).innerWidth || 1920)),
+              height: Math.min(boundingBox.height + 20, await this.page.evaluate(() => (globalThis as any).innerHeight || 1080))
             }
           });
           extractionMethod = 'ocr_element';
@@ -405,18 +405,18 @@ export class BrowserAgent {
       let bestConfidence = 0;
 
       // If we have context about what we're looking for, try to find it
-      if (mapping.csvField && ocrResult.words.length > 0) {
+      if (mapping.csvField && ocrResult.words && ocrResult.words.length > 0) {
         // Look for words with high confidence
         const highConfidenceWords = ocrResult.words.filter(word => word.confidence > 0.7);
         
         if (highConfidenceWords.length > 0) {
           // For now, take the first high-confidence word
           // In a real implementation, you'd use more sophisticated matching
-          bestMatch = highConfidenceWords[0].text;
-          bestConfidence = Math.min(0.8, highConfidenceWords[0].confidence); // Cap OCR confidence
+          bestMatch = highConfidenceWords[0]?.text;
+          bestConfidence = Math.min(0.8, highConfidenceWords[0]?.confidence || 0); // Cap OCR confidence
         } else if (ocrResult.words.length > 0) {
-          bestMatch = ocrResult.words[0].text;
-          bestConfidence = Math.min(0.6, ocrResult.words[0].confidence);
+          bestMatch = ocrResult.words[0]?.text;
+          bestConfidence = Math.min(0.6, ocrResult.words[0]?.confidence || 0);
         }
       }
 
@@ -433,7 +433,7 @@ export class BrowserAgent {
         value: normalizedValue,
         method: extractionMethod,
         confidence: bestConfidence,
-        element
+        element: element || undefined
       };
 
     } catch (error) {
@@ -479,7 +479,12 @@ export class BrowserAgent {
       return {
         id: `element_${Date.now()}_${name}`,
         base64Data: screenshotBuffer.toString('base64'),
-        region: boundingBox || undefined,
+        region: boundingBox ? {
+          x: boundingBox.x,
+          y: boundingBox.y, 
+          width: boundingBox.width,
+          height: boundingBox.height
+        } : undefined,
         timestamp: new Date(),
         quality: 100,
         type: 'png'
