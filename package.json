@@ -1,6 +1,6 @@
 {
   "name": "datahawk-autonomous-qa",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Autonomous QA Browser Agent for CSV validation with web interfaces",
   "main": "dist/main.js",
   "type": "module",

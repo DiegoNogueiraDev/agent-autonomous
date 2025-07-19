@@ -34,10 +34,10 @@ export class TaskmasterController {
   private llmEngine: LocalLLMEngine;
   private evidenceCollector: EvidenceCollector;
   private crewOrchestrator: CrewOrchestrator;
-  private config: ValidationConfig;
+  private config: ValidationConfig | null = null;
 
-  constructor(config: ValidationConfig) {
-    this.config = config;
+  constructor(config?: ValidationConfig) {
+    this.config = config || null;
     this.logger = Logger.getInstance();
     this.csvLoader = new CSVLoader();
     this.reportGenerator = new ReportGenerator();
@@ -68,9 +68,16 @@ export class TaskmasterController {
 
     this.llmEngine = new LocalLLMEngine({ settings: llmSettings });
 
-    // Initialize Evidence Collector (will be set with output path during execution)
+    // Initialize Evidence Collector with default settings if no config provided
+    const evidenceSettings: EvidenceSettings = this.config?.evidence || {
+      retention: 30,
+      screenshots: true,
+      domSnapshots: true,
+      compressionAfter: 7
+    };
+    
     this.evidenceCollector = new EvidenceCollector({
-      settings: this.config.evidence,
+      settings: evidenceSettings,
       baseOutputPath: './data/output' // Default, will be updated in execute()
     });
 
@@ -83,6 +90,228 @@ export class TaskmasterController {
       performanceMonitoring: true
     };
     this.crewOrchestrator = new CrewOrchestrator(crewConfig);
+  }
+
+  /**
+   * Validate data from CSV against web interface
+   */
+  async validateData(options: {
+    inputPath: string;
+    configPath: string;
+    outputPath: string;
+    formats: ReportFormat[];
+    maxRows?: number;
+    onProgress?: (progress: number) => void;
+  }): Promise<Report> {
+    try {
+      // Load configuration
+      const { ConfigManager } = await import('./config-manager.js');
+      const configManager = new ConfigManager();
+      const config = await configManager.loadValidationConfig(options.configPath);
+      
+      // Load CSV data
+      const csvData = await this.csvLoader.load(options.inputPath);
+      let rows = csvData.rows;
+      
+      // Apply row limit if specified
+      if (options.maxRows && options.maxRows > 0) {
+        rows = rows.slice(0, options.maxRows);
+      }
+
+      // Initialize engines
+      await this.browserAgent.initialize();
+      await this.llmEngine.initialize();
+      
+      // Initialize CrewAI orchestrator with engines
+      await this.crewOrchestrator.initialize(
+        this.browserAgent,
+        this.llmEngine,
+        undefined, // OCR Engine - will be created internally
+        this.evidenceCollector
+      );
+
+      const startTime = Date.now();
+      const results: ValidationResult[] = [];
+      let successfulValidations = 0;
+      let totalConfidence = 0;
+      let errorCount = 0;
+
+      this.logger.info('Starting validation process', {
+        totalRows: rows.length,
+        targetUrl: config.targetUrl,
+        fieldMappings: config.fieldMappings.length
+      });
+
+      // Process each row
+      for (let i = 0; i < rows.length; i++) {
+        const csvRow = { ...rows[i], _index: i };
+        
+        try {
+          if (options.onProgress) {
+            options.onProgress(Math.round((i / rows.length) * 100));
+          }
+
+          // Use CrewAI multi-agent orchestration
+          const crewResult = await this.crewOrchestrator.executeRowValidation(
+            csvRow,
+            config.fieldMappings,
+            config
+          );
+
+          if (crewResult.success && crewResult.validationResults) {
+            // Convert crew result to standard validation result
+            const validations = crewResult.validationResults.validationResults || crewResult.validationResults;
+            const webData = crewResult.extractionResults?.extractedData || {};
+
+            const validationResult: ValidationResult = {
+              rowIndex: i,
+              csvData: csvRow,
+              webData,
+              validations: Array.isArray(validations) ? validations.map((v: any) => ({
+                field: config.fieldMappings.find(m => m.csvField in csvRow)?.csvField || 'unknown',
+                match: v.match || false,
+                confidence: v.confidence || 0,
+                method: v.method || 'crew_ai',
+                reasoning: v.reasoning || 'Validated by CrewAI multi-agent system'
+              })) : [],
+              processingTime: crewResult.processingTime || 0,
+              timestamp: new Date().toISOString()
+            };
+
+            results.push(validationResult);
+
+            // Calculate metrics
+            const avgConfidence = validationResult.validations.length > 0
+              ? validationResult.validations.reduce((sum, v) => sum + v.confidence, 0) / validationResult.validations.length
+              : 0;
+
+            totalConfidence += avgConfidence;
+            
+            if (validationResult.validations.some(v => v.match)) {
+              successfulValidations++;
+            }
+          } else {
+            errorCount++;
+            
+            // Add error result
+            const errorResult: ValidationResult = {
+              rowIndex: i,
+              csvData: csvRow,
+              webData: {},
+              validations: [],
+              processingTime: crewResult.processingTime || 0,
+              timestamp: new Date().toISOString(),
+              error: crewResult.error || 'Validation failed'
+            };
+
+            results.push(errorResult);
+          }
+        } catch (error) {
+          errorCount++;
+          this.logger.error('Row validation failed', { rowIndex: i, error });
+          
+          const errorResult: ValidationResult = {
+            rowIndex: i,
+            csvData: csvRow,
+            webData: {},
+            validations: [],
+            processingTime: 0,
+            timestamp: new Date().toISOString(),
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+
+          results.push(errorResult);
+        }
+      }
+
+      if (options.onProgress) {
+        options.onProgress(100);
+      }
+
+      const processingTime = Date.now() - startTime;
+      const averageConfidence = results.length > 0 ? totalConfidence / results.length : 0;
+      const errorRate = results.length > 0 ? errorCount / results.length : 0;
+
+      // Create summary
+      const summary: ReportSummary = {
+        totalRows: results.length,
+        processedRows: results.length,
+        successfulValidations,
+        averageConfidence,
+        processingTime,
+        errorRate,
+        performance: {
+          rowsPerSecond: processingTime > 0 ? (results.length / (processingTime / 1000)) : 0,
+          averageRowTime: results.length > 0 ? processingTime / results.length : 0
+        },
+        validationBreakdown: {
+          exact_matches: results.filter(r => r.validations.some(v => v.match && v.confidence > 0.9)).length,
+          fuzzy_matches: results.filter(r => r.validations.some(v => v.match && v.confidence <= 0.9)).length,
+          no_matches: results.filter(r => !r.validations.some(v => v.match)).length,
+          errors: errorCount
+        }
+      };
+
+      // Create final report object
+      const report: Report = {
+        summary,
+        results,
+        statistics: {
+          totalRows: results.length,
+          validRows: results.filter(r => !r.error).length,
+          invalidRows: results.filter(r => r.error).length,
+          averageProcessingTime: results.length > 0 ? processingTime / results.length : 0
+        },
+        timestamp: new Date(),
+        version: '1.1.0',
+        config: {
+          inputFile: options.inputPath,
+          configFile: options.configPath,
+          outputPath: options.outputPath
+        }
+      };
+
+      // Generate reports
+      const reportPaths = await this.reportGenerator.generateReports(
+        report,
+        options.outputPath,
+        options.formats
+      );
+
+      return {
+        summary,
+        results,
+        metadata: {
+          configFile: options.configPath,
+          inputFile: options.inputPath,
+          timestamp: new Date().toISOString(),
+          processingTime,
+          version: '1.1.0'
+        },
+        reportPaths
+      };
+
+    } catch (error) {
+      this.logger.error('Validation process failed', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Cleanup resources
+   */
+  async cleanup(): Promise<void> {
+    if (this.browserAgent && typeof this.browserAgent.cleanup === 'function') {
+      await this.browserAgent.cleanup();
+    }
+    
+    if (this.llmEngine && typeof (this.llmEngine as any).cleanup === 'function') {
+      await (this.llmEngine as any).cleanup();
+    }
+
+    if (this.crewOrchestrator && typeof this.crewOrchestrator.cleanup === 'function') {
+      await this.crewOrchestrator.cleanup();
+    }
   }
 
   /**
