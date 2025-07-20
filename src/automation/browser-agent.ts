@@ -1,6 +1,7 @@
 import { chromium, Browser, BrowserContext, Page, ElementHandle } from 'playwright';
 import { Logger } from '../core/logger.js';
 import { OCREngine } from '../ocr/ocr-engine.js';
+import { ManagedResource, registerResource } from '../core/resource-manager.js';
 import type { 
   BrowserSettings, 
   NavigationResult, 
@@ -22,12 +23,14 @@ export interface BrowserAgentOptions {
   enableOCRFallback?: boolean;
 }
 
-export class BrowserAgent {
+export class BrowserAgent implements ManagedResource {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   private logger: Logger;
   private settings: BrowserSettings;
+  private cleanedUp: boolean = false;
+  private resourceId: string;
   private ocrEngine: OCREngine | null = null;
   private enableOCRFallback: boolean;
 
@@ -35,11 +38,15 @@ export class BrowserAgent {
     this.logger = Logger.getInstance();
     this.settings = options.settings;
     this.enableOCRFallback = options.enableOCRFallback ?? true;
+    this.resourceId = `browser-agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
     // Initialize OCR Engine if enabled
     if (this.enableOCRFallback && options.ocrSettings) {
       this.ocrEngine = new OCREngine({ settings: options.ocrSettings });
     }
+    
+    // Register for automatic cleanup
+    registerResource(this.resourceId, this);
   }
 
   /**
@@ -597,17 +604,29 @@ export class BrowserAgent {
   }
 
   /**
-   * Cleanup method for compatibility
+   * Check if resources have been cleaned up
    */
-  async cleanup(): Promise<void> {
-    await this.close();
+  isCleanedUp(): boolean {
+    return this.cleanedUp;
   }
 
   /**
-   * Close browser and cleanup
+   * Cleanup browser resources (implements ManagedResource)
    */
-  async close(): Promise<void> {
+  async cleanup(): Promise<void> {
+    if (this.cleanedUp) {
+      return;
+    }
+
     try {
+      this.logger.debug('Starting browser agent cleanup');
+
+      // Cleanup OCR engine first
+      if (this.ocrEngine) {
+        await this.ocrEngine.cleanup();
+        this.ocrEngine = null;
+      }
+
       if (this.page) {
         await this.page.close();
         this.page = null;
@@ -623,17 +642,20 @@ export class BrowserAgent {
         this.browser = null;
       }
 
-      // Cleanup OCR engine if enabled
-      if (this.ocrEngine) {
-        await this.ocrEngine.cleanup();
-        this.ocrEngine = null;
-      }
-
-      this.logger.debug('Browser agent closed successfully');
+      this.cleanedUp = true;
+      this.logger.debug('Browser agent cleanup completed successfully');
 
     } catch (error) {
-      this.logger.error('Error closing browser agent', error);
+      this.logger.error('Error during browser agent cleanup', error);
+      throw error;
     }
+  }
+
+  /**
+   * Close browser and cleanup (legacy method)
+   */
+  async close(): Promise<void> {
+    await this.cleanup();
   }
 
   /**

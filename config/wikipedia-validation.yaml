@@ -1,0 +1,81 @@
+targetUrl: 'https://pt.wikipedia.org/wiki/{titulo}'
+fieldMappings:
+  - csvField: 'titulo'
+    webSelector: 'h1#firstHeading'
+    fieldType: 'text'
+    required: true
+    validationStrategy: 'dom_extraction'
+  - csvField: 'data'
+    webSelector: '.infobox-data'
+    fieldType: 'date'
+    required: true
+    validationStrategy: 'dom_extraction'
+  - csvField: 'fato'
+    webSelector: 'p'
+    fieldType: 'text'
+    required: true
+    validationStrategy: 'hybrid'
+
+validationRules:
+  confidence:
+    minimumOverall: 0.7
+    minimumField: 0.6
+    ocrThreshold: 0.6
+    fuzzyMatchThreshold: 0.75
+  fuzzyMatching:
+    enabled: true
+    algorithms: ['levenshtein', 'jaro_winkler']
+    stringSimilarityThreshold: 0.75
+    numberTolerance: 0.001
+    caseInsensitive: true
+    ignoreWhitespace: true
+  normalization:
+    whitespace:
+      trimLeading: true
+      trimTrailing: true
+      normalizeInternal: true
+    case:
+      email: 'lowercase'
+      name: 'title_case'
+      text: 'preserve'
+    specialCharacters:
+      removeAccents: true
+      normalizeQuotes: true
+      normalizeDashes: true
+    numbers:
+      decimalSeparator: '.'
+      thousandSeparator: ','
+      currencySymbolRemove: true
+    dates:
+      targetFormat: 'YYYY-MM-DD'
+      inputFormats: ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD']
+  errorHandling:
+    maxRetryAttempts: 3
+    retryDelayMs: 2000
+    exponentialBackoff: true
+    criticalErrors: ['navigation_timeout', 'page_not_found']
+    recoverableErrors: ['element_not_found', 'ocr_low_confidence']
+    escalationThreshold: 0.1
+
+performance:
+  batchProcessing: true
+  batchSize: 2
+  parallelWorkers: 2
+  caching:
+    domSnapshots: true
+    ocrResults: true
+    validationDecisions: false
+    ttl: 3600
+  timeouts:
+    navigation: 30000
+    domExtraction: 15000
+    ocrProcessing: 45000
+    validationDecision: 30000
+    evidenceCollection: 10000
+
+evidence:
+  retentionDays: 30
+  screenshotEnabled: true
+  domSnapshotEnabled: true
+  compressionEnabled: true
+  includeInReports: true 

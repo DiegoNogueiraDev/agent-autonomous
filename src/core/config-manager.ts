@@ -1,5 +1,5 @@
-import { readFile } from 'fs/promises';
-import { parse as parseYaml } from 'yaml';
+import { readFile, writeFile } from 'fs/promises';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 import type { ValidationConfig } from '../types/index.js';
 
@@ -245,6 +245,64 @@ export class ConfigManager {
     
     await writeFile(outputPath, yaml.stringify(sampleConfig, null, 2));
     */
+  }
+
+  /**
+   * Merge multiple configuration objects with deep merge logic
+   */
+  mergeConfigs(baseConfig: ValidationConfig, overrideConfig: Partial<ValidationConfig>): ValidationConfig {
+    return {
+      ...baseConfig,
+      ...overrideConfig,
+      fieldMappings: [...(baseConfig.fieldMappings || []), ...(overrideConfig.fieldMappings || [])],
+      validationRules: { 
+        ...baseConfig.validationRules, 
+        ...overrideConfig.validationRules,
+        confidence: { ...baseConfig.validationRules?.confidence, ...overrideConfig.validationRules?.confidence },
+        fuzzyMatching: { ...baseConfig.validationRules?.fuzzyMatching, ...overrideConfig.validationRules?.fuzzyMatching },
+        normalization: { ...baseConfig.validationRules?.normalization, ...overrideConfig.validationRules?.normalization },
+        errorHandling: { ...baseConfig.validationRules?.errorHandling, ...overrideConfig.validationRules?.errorHandling }
+      },
+      performance: { 
+        ...baseConfig.performance, 
+        ...overrideConfig.performance,
+        caching: { ...baseConfig.performance?.caching, ...overrideConfig.performance?.caching },
+        timeouts: { ...baseConfig.performance?.timeouts, ...overrideConfig.performance?.timeouts }
+      },
+      evidence: { ...baseConfig.evidence, ...overrideConfig.evidence }
+    };
+  }
+
+  /**
+   * Save validation configuration to YAML file
+   */
+  async saveValidationConfig(filePath: string, config: ValidationConfig): Promise<void> {
+    try {
+      // Validate configuration before saving
+      const validatedConfig = ValidationConfigSchema.parse(config);
+      
+      // Convert to YAML format
+      const yamlContent = stringifyYaml(validatedConfig, { 
+        indent: 2,
+        lineWidth: -1 // No line wrapping
+      });
+      
+      // Write to file
+      await writeFile(filePath, yamlContent, 'utf-8');
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const errorMessages = error.errors.map(err => 
+          `${err.path.join('.')}: ${err.message}`
+        ).join(', ');
+        throw new Error(`Configuration validation failed before save: ${errorMessages}`);
+      }
+      
+      if (error instanceof Error) {
+        throw new Error(`Failed to save configuration: ${error.message}`);
+      }
+      
+      throw new Error('Failed to save configuration: Unknown error');
+    }
   }
 
   /**

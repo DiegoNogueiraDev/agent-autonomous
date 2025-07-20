@@ -23,6 +23,7 @@ export class LocalLLMEngine {
   private requestCount: number = 0;
   private llama: any = null; // Will hold the actual llama-cpp-python instance
   private enableFallback: boolean;
+  private workingServerUrl: string = 'http://localhost:8080'; // Default to QA report working config
 
   constructor(options: LLMEngineOptions) {
     this.logger = Logger.getInstance();
@@ -115,61 +116,123 @@ export class LocalLLMEngine {
   }
 
   /**
-   * Check if LLM server is running
+   * Check if LLM server is running - trying both ports from QA report
    */
   private async checkLLMServer(): Promise<boolean> {
-    try {
-      const response = await fetch('http://localhost:8000/health');
-      if (response.ok) {
-        const data = await response.json() as any;
-        return data.model_loaded === true;
+    const serverUrls = [
+      'http://localhost:8080/health',  // From QA report - working server
+      'http://127.0.0.1:8080/health',  // Alternative localhost
+      'http://localhost:8000/health',  // Original config
+      'http://127.0.0.1:8000/health'   // Alternative localhost
+    ];
+
+    for (const url of serverUrls) {
+      try {
+        this.logger.debug(`Checking LLM server at ${url}`);
+        const response = await fetch(url, { 
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+        
+        if (response.ok) {
+          const data = await response.json() as any;
+          // Check different response formats
+          const isReady = data.status === 'ready' || 
+                         data.model_loaded === true || 
+                         data.ready === true ||
+                         response.status === 200;
+          
+          if (isReady) {
+            this.logger.info(`LLM server found and ready at ${url}`, { response: data });
+            // Store working URL for future requests
+            this.workingServerUrl = url.replace('/health', '');
+            return true;
+          }
+        }
+      } catch (error) {
+        this.logger.debug(`Failed to connect to ${url}`, { error: error instanceof Error ? error.message : 'Unknown error' });
       }
-      return false;
-    } catch {
-      return false;
     }
+    
+    this.logger.warn('No working LLM server found on any of the attempted URLs');
+    return false;
   }
 
   /**
-   * Create a client that connects to the Python LLM server
+   * Create a client that connects to the Python LLM server using discovered working URL
    */
   private async createLlamaClient(): Promise<any> {
+    const baseUrl = this.workingServerUrl;
+    
     return {
       modelPath: this.settings.modelPath,
       initialized: true,
       isReal: true,
+      baseUrl,
+      
       generate: async (prompt: string, options: any = {}) => {
         try {
-          const response = await fetch('http://localhost:8000/generate', {
+          // Try llama.cpp server format first (from QA report)
+          const response = await fetch(`${baseUrl}/completion`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
               prompt,
-              max_tokens: options.max_tokens || this.settings.maxTokens,
-              temperature: options.temperature || this.settings.temperature
+              n_predict: options.max_tokens || this.settings.maxTokens,
+              temperature: options.temperature || this.settings.temperature,
+              stop: options.stop || ['\n'],
+              stream: false
             })
           });
 
           if (!response.ok) {
-            throw new Error(`Server responded with ${response.status}`);
+            throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
           }
 
           const data = await response.json() as any;
           return {
-            text: data.text,
-            tokens: data.tokens,
-            processing_time: data.processing_time
+            text: data.content || data.text || '',
+            tokens: data.tokens_predicted || data.tokens || 0,
+            processing_time: data.timings?.predicted_ms || 0
           };
         } catch (error) {
-          throw new Error(`LLM server request failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          this.logger.warn('llama.cpp format failed, trying alternative format', { error });
+          
+          // Fallback to custom server format
+          try {
+            const response = await fetch(`${baseUrl}/generate`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                prompt,
+                max_tokens: options.max_tokens || this.settings.maxTokens,
+                temperature: options.temperature || this.settings.temperature
+              })
+            });
+
+            if (!response.ok) {
+              throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json() as any;
+            return {
+              text: data.text || data.content || '',
+              tokens: data.tokens || 0,
+              processing_time: data.processing_time || 0
+            };
+          } catch (fallbackError) {
+            throw new Error(`LLM server request failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
         }
       },
       
       validateSpecific: async (request: any) => {
         try {
-          const response = await fetch('http://localhost:8000/validate', {
+          const response = await fetch(`${baseUrl}/validate`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -183,7 +246,7 @@ export class LocalLLMEngine {
           });
 
           if (!response.ok) {
-            throw new Error(`Server responded with ${response.status}`);
+            throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
           }
 
           const data = await response.json() as any;
@@ -395,7 +458,7 @@ Respond in JSON format:
   }
 
   /**
-   * Parse LLM response into structured validation decision
+   * Parse LLM response into structured validation decision with enhanced JSON extraction
    */
   private parseValidationResponse(
     llmResponse: LLMResponse, 
@@ -404,51 +467,167 @@ Respond in JSON format:
     const text = llmResponse.text;
 
     try {
-      // Try to parse JSON response first
+      // Try direct JSON parsing first
       const parsed = JSON.parse(text);
-      
-      return {
-        match: Boolean(parsed.match),
-        confidence: Math.min(1.0, Math.max(0.0, parseFloat(parsed.confidence || 0.5))),
-        reasoning: parsed.reasoning || 'LLM validation decision',
-        normalizedCsvValue: parsed.normalized_csv || request.csvValue,
-        normalizedWebValue: parsed.normalized_web || request.webValue,
-        issues: parsed.issues ? [parsed.issues] : undefined
-      };
-
+      return this.buildValidationDecision(parsed, request);
     } catch (error) {
-      this.logger.warn('Failed to parse LLM JSON response, trying text parsing', { error });
+      this.logger.debug('Direct JSON parsing failed, trying extraction methods', { error });
       
-      // Fallback to text parsing
-      return this.parseTextResponse(text, request);
+      // Try to extract JSON from text using regex
+      const extractedJson = this.extractJsonFromText(text);
+      if (extractedJson) {
+        try {
+          const parsed = JSON.parse(extractedJson);
+          return this.buildValidationDecision(parsed, request);
+        } catch (e) {
+          this.logger.debug('Extracted JSON parsing failed', { extractedJson, error: e });
+        }
+      }
+      
+      // Try fixing common JSON issues
+      const fixedJson = this.fixCommonJsonIssues(text);
+      if (fixedJson) {
+        try {
+          const parsed = JSON.parse(fixedJson);
+          return this.buildValidationDecision(parsed, request);
+        } catch (e) {
+          this.logger.debug('Fixed JSON parsing failed', { fixedJson, error: e });
+        }
+      }
+      
+      this.logger.warn('All JSON parsing methods failed, falling back to text parsing', { 
+        originalText: text,
+        error 
+      });
+      
+      // Fallback to structured text parsing
+      return this.parseStructuredText(text, request);
     }
   }
 
   /**
-   * Parse text-based LLM response
+   * Extract JSON from text using multiple regex patterns
    */
-  private parseTextResponse(text: string, request: ValidationDecisionRequest): ValidationDecisionResponse {
-    try {
-      const matchLine = text.match(/match['":]?\s*(true|false)/i);
-      const confidenceLine = text.match(/confidence['":]?\s*([\d.]+)/i);
-      const reasoningLine = text.match(/reasoning['":]?\s*['""]?(.+?)['""]?(?:\n|$|,)/i);
+  private extractJsonFromText(text: string): string | null {
+    // Pattern 1: Find JSON object with proper braces
+    const jsonMatch1 = text.match(/\{[\s\S]*?\}/);
+    if (jsonMatch1) {
+      return jsonMatch1[0];
+    }
 
-      const match = matchLine?.[1]?.toLowerCase() === 'true';
-      const confidence = Math.min(1.0, Math.max(0.0, parseFloat(confidenceLine?.[1] || '0.5')));
-      const reasoning = reasoningLine?.[1]?.trim() || 'LLM validation decision';
+    // Pattern 2: Find JSON between code blocks
+    const jsonMatch2 = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+    if (jsonMatch2 && jsonMatch2[1]) {
+      return jsonMatch2[1];
+    }
+
+    // Pattern 3: Find JSON after specific markers
+    const jsonMatch3 = text.match(/(?:json|response|result):\s*(\{[\s\S]*?\})/i);
+    if (jsonMatch3 && jsonMatch3[1]) {
+      return jsonMatch3[1];
+    }
+
+    return null;
+  }
+
+  /**
+   * Fix common JSON formatting issues
+   */
+  private fixCommonJsonIssues(text: string): string | null {
+    let fixed = text.trim();
+
+    // Remove trailing commas
+    fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
+    
+    // Fix unquoted keys
+    fixed = fixed.replace(/(\w+):/g, '"$1":');
+    
+    // Fix single quotes to double quotes
+    fixed = fixed.replace(/'/g, '"');
+    
+    // Remove extra characters before/after braces
+    const match = fixed.match(/\{[\s\S]*\}/);
+    if (match) {
+      return match[0];
+    }
+
+    return null;
+  }
+
+  /**
+   * Build validation decision from parsed JSON object
+   */
+  private buildValidationDecision(parsed: any, request: ValidationDecisionRequest): ValidationDecisionResponse {
+    return {
+      match: Boolean(parsed.match),
+      confidence: Math.min(1.0, Math.max(0.0, parseFloat(parsed.confidence || 0.5))),
+      reasoning: parsed.reasoning || 'LLM validation decision',
+      normalizedCsvValue: parsed.normalized_csv || request.csvValue,
+      normalizedWebValue: parsed.normalized_web || request.webValue,
+      issues: parsed.issues ? (Array.isArray(parsed.issues) ? parsed.issues : [parsed.issues]) : undefined
+    };
+  }
+
+  /**
+   * Parse structured text when JSON parsing fails completely
+   */
+  private parseStructuredText(text: string, request: ValidationDecisionRequest): ValidationDecisionResponse {
+    try {
+      // Look for key-value patterns in the text
+      const patterns = {
+        match: /(?:match|result)[\s:=]*(?:is\s+)?(true|false|yes|no)/i,
+        confidence: /(?:confidence|score)[\s:=]*(?:is\s+)?([\d.]+)/i,
+        reasoning: /(?:reasoning|explanation|because|reason)[\s:=]*(?:is\s+)?['""]?([^'""\n]+)/i
+      };
+
+      const match = this.extractFromPattern(text, patterns.match, (val) => 
+        ['true', 'yes'].includes(val.toLowerCase())
+      ) ?? false;
+
+      const confidence = this.extractFromPattern(text, patterns.confidence, (val) => 
+        Math.min(1.0, Math.max(0.0, parseFloat(val)))
+      ) ?? 0.5;
+
+      const reasoning = this.extractFromPattern(text, patterns.reasoning, (val) => 
+        val.trim() || 'LLM structured text parsing'
+      ) ?? 'LLM structured text parsing';
 
       return {
         match,
         confidence,
         reasoning,
         normalizedCsvValue: request.csvValue,
-        normalizedWebValue: request.webValue
+        normalizedWebValue: request.webValue,
+        issues: ['Parsed from structured text - JSON parsing failed']
       };
 
     } catch (error) {
-      this.logger.warn('Failed to parse LLM response, using fallback', { error });
+      this.logger.warn('Structured text parsing failed, using fallback', { error });
       return this.getFallbackDecision(request);
     }
+  }
+
+  /**
+   * Extract value from text using pattern and transformer
+   */
+  private extractFromPattern<T>(text: string, pattern: RegExp, transformer: (value: string) => T | null): T | null {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      try {
+        return transformer(match[1]);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Legacy text parsing method - replaced by parseStructuredText
+   * @deprecated Use parseStructuredText instead
+   */
+  private parseTextResponse(text: string, request: ValidationDecisionRequest): ValidationDecisionResponse {
+    return this.parseStructuredText(text, request);
   }
 
   /**

@@ -1,0 +1,30 @@
+targetUrl: 'https://pt.wikipedia.org/wiki/{titulo}'
+fieldMappings:
+  - csvField: 'titulo'
+    webSelector: 'h1#firstHeading'
+    fieldType: 'invalid_type'
+    required: true
+    validationStrategy: 'dom_extraction'
+  - csvField: 'data'
+    webSelector: '.infobox-data'
+    required: true
+    validationStrategy: 'dom_extraction'
+  - csvField: 'fato'
+    webSelector: 'p'
+    fieldType: 'text'
+    required: true
+    validationStrategy: 'invalid_strategy'
+
+validationRules:
+  confidence:
+    minimumOverall: 1.5
+    minimumField: 0.6
+    ocrThreshold: 0.6
+    fuzzyMatchThreshold: 0.75
+  fuzzyMatching:
+    enabled: 'invalid_boolean'
+    algorithms: ['invalid_algorithm', 'jaro_winkler']
+    stringSimilarityThreshold: 0.75
+    numberTolerance: 0.001
+    caseInsensitive: true
+    ignoreWhitespace: true 
