@@ -1,9 +1,13 @@
-# 🦅 DataHawk - Autonomous QA Browser Agent
+# DataHawk - Autonomous QA Browser Agent
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
+
+<p align="center">
+  <img src="images/logo/datahawk_logo.png" alt="DataHawk Logo" width="340"/>
+</p>
 
 Um agente autônomo para validação de dados entre arquivos CSV e interfaces web, executando 100% offline com LLM local e orquestração multi-agente.
 

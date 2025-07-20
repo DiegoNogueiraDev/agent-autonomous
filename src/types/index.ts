@@ -603,4 +603,3 @@ export type OCROperation =
   | 'deskew'
   | 'noise_reduction'
   | 'contrast_enhance';
-

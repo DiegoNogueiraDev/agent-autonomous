@@ -1,11 +1,26 @@
-targetUrl: 'https://example.com'
+targetUrl: 'https://httpbin.org/html'
 fieldMappings:
+  - csvField: 'id'
+    webSelector: 'h1'
+    fieldType: 'text'
+    required: true
+    validationStrategy: 'dom_extraction'
   - csvField: 'name'
     webSelector: 'h1'
     fieldType: 'text'
     required: true
     validationStrategy: 'dom_extraction'
   - csvField: 'email'
+    webSelector: 'p'
+    fieldType: 'email'
+    required: false
+    validationStrategy: 'dom_extraction'
+  - csvField: 'age'
+    webSelector: 'p'
+    fieldType: 'number'
+    required: false
+    validationStrategy: 'dom_extraction'
+  - csvField: 'status'
     webSelector: 'p'
     fieldType: 'text'
     required: false
