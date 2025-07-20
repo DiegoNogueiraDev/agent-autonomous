@@ -137,6 +137,16 @@ async function handleValidateCommand(options: any) {
 
   const outputPath = options.output || './data/output';
   const reportFormats = options.format.split(',');
+  
+  // Validate report formats
+  const validFormats = ['json', 'html', 'markdown', 'csv'];
+  const invalidFormats = reportFormats.filter((format: string) => !validFormats.includes(format.trim()));
+  
+  if (invalidFormats.length > 0) {
+    console.error(chalk.red(`❌ Error: Invalid output format(s): ${invalidFormats.join(', ')}`));
+    console.error(chalk.gray(`   Supported formats: ${validFormats.join(', ')}`));
+    process.exit(1);
+  }
 
   logger.info('Configuration loaded successfully', {
     input: options.input,
