@@ -5,6 +5,8 @@
 **Status:** Em Desenvolvimento
 
 ## 🗂️ Estrutura da Documentação
+### Issues
+[issues/](./issues/)
 
 ### 📋 [01-visao-geral/](./01-visao-geral/)
 Documentos de visão geral e planejamento do projeto:
