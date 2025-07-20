@@ -1,5 +1,5 @@
-import Tesseract from 'tesseract.js';
 import sharp from 'sharp';
+import Tesseract from 'tesseract.js';
 import { Logger } from '../core/logger.js';
 import type { OCRResult, OCRSettings } from '../types/index.js';
 
@@ -43,11 +43,11 @@ export class OCREngine {
     averageConfidence: number;
     averageProcessingTime: number;
   } = {
-    totalImages: 0,
-    successfulExtractions: 0,
-    averageConfidence: 0,
-    averageProcessingTime: 0
-  };
+      totalImages: 0,
+      successfulExtractions: 0,
+      averageConfidence: 0,
+      averageProcessingTime: 0
+    };
 
   constructor(options: OCREngineOptions) {
     this.logger = Logger.getInstance();
@@ -65,7 +65,7 @@ export class OCREngine {
       });
 
       this.worker = await Tesseract.createWorker(this.settings.language);
-      
+
       // Configure worker parameters for better accuracy
       await this.worker.setParameters({
         tessedit_page_seg_mode: this.settings.mode,
@@ -227,7 +227,7 @@ export class OCREngine {
    * Preprocess image for better OCR accuracy
    */
   async preprocessImage(
-    imageBuffer: Buffer, 
+    imageBuffer: Buffer,
     options: ImagePreprocessingOptions = {}
   ): Promise<Buffer> {
     try {
@@ -265,8 +265,8 @@ export class OCREngine {
         if (options.cropRegion) {
           const { left, top, width, height } = options.cropRegion;
           // Validate crop region
-          if (left >= 0 && top >= 0 && width > 0 && height > 0 && 
-              left + width <= metadata.width! && top + height <= metadata.height!) {
+          if (left >= 0 && top >= 0 && width > 0 && height > 0 &&
+            left + width <= metadata.width! && top + height <= metadata.height!) {
             image = image.extract({ left, top, width, height });
             this.logger.debug('Applied crop region', options.cropRegion);
           } else {
@@ -337,14 +337,14 @@ export class OCREngine {
         try {
           processedBuffer = await image.jpeg({ quality: 90 }).toBuffer();
         } catch (jpegError) {
-          this.logger.error('Both PNG and JPEG conversion failed, returning original buffer', { 
-            pngError, 
-            jpegError 
+          this.logger.error('Both PNG and JPEG conversion failed, returning original buffer', {
+            pngError,
+            jpegError
           });
           return imageBuffer;
         }
       }
-      
+
       this.logger.debug('Image preprocessing completed', {
         originalSize: imageBuffer.length,
         processedSize: processedBuffer.length
@@ -363,7 +363,7 @@ export class OCREngine {
    * Extract text with automatic preprocessing for better results
    */
   async extractTextWithPreprocessing(
-    imageBuffer: Buffer, 
+    imageBuffer: Buffer,
     preprocessingOptions: ImagePreprocessingOptions = {}
   ): Promise<OCRResult> {
     if (!this.initialized || !this.worker) {
@@ -402,21 +402,21 @@ export class OCREngine {
 
     } catch (error) {
       this.logger.error('OCR extraction with preprocessing failed', { error });
-      
+
       // Try one more time with just the original buffer and minimal processing
       try {
         this.logger.info('Attempting OCR fallback with original image buffer');
         const fallbackResult = await this.extractText(imageBuffer);
-        
+
         this.logger.warn('OCR fallback succeeded', {
           confidence: fallbackResult.confidence,
           wordCount: fallbackResult.words.length
         });
-        
+
         return fallbackResult;
       } catch (fallbackError) {
         this.logger.error('OCR fallback also failed', { fallbackError });
-        
+
         // Return empty result instead of throwing
         return {
           text: '',
@@ -433,7 +433,7 @@ export class OCREngine {
    * Search for specific text in OCR results with fuzzy matching
    */
   searchTextInResults(
-    ocrResult: OCRResult, 
+    ocrResult: OCRResult,
     searchOptions: OCRSearchOptions
   ): Array<{
     match: string;
@@ -545,11 +545,11 @@ export class OCREngine {
    */
   private updateProcessingStats(confidence: number, processingTime: number): void {
     const totalSuccessful = this.processingStats.successfulExtractions;
-    
-    this.processingStats.averageConfidence = 
+
+    this.processingStats.averageConfidence =
       (this.processingStats.averageConfidence * (totalSuccessful - 1) + confidence) / totalSuccessful;
-    
-    this.processingStats.averageProcessingTime = 
+
+    this.processingStats.averageProcessingTime =
       (this.processingStats.averageProcessingTime * (totalSuccessful - 1) + processingTime) / totalSuccessful;
   }
 
@@ -585,15 +585,15 @@ export class OCREngine {
     for (const image of images) {
       try {
         const result = await this.extractTextWithPreprocessing(
-          image.buffer, 
+          image.buffer,
           image.preprocessingOptions || {}
         );
         results.push({ id: image.id, result });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         this.logger.error(`Batch OCR failed for image ${image.id}`, error);
-        results.push({ 
-          id: image.id, 
+        results.push({
+          id: image.id,
           result: this.getEmptyResult(),
           error: errorMessage
         });
@@ -623,8 +623,8 @@ export class OCREngine {
    * Get comprehensive OCR processing statistics
    */
   getStats() {
-    const successRate = this.processingStats.totalImages > 0 
-      ? this.processingStats.successfulExtractions / this.processingStats.totalImages 
+    const successRate = this.processingStats.totalImages > 0
+      ? this.processingStats.successfulExtractions / this.processingStats.totalImages
       : 0;
 
     return {

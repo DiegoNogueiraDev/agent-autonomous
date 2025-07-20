@@ -1,27 +1,25 @@
-import { Logger } from './logger.js';
-import { CSVLoader } from './csv-loader.js';
-import { ReportGenerator } from '../reporting/report-generator.js';
-import { BrowserAgent } from '../automation/browser-agent.js';
-import { LocalLLMEngine } from '../llm/local-llm-engine.js';
-import { EvidenceCollector } from '../evidence/evidence-collector.js';
 import { CrewOrchestrator } from '../agents/crew-orchestrator.js';
-import type { 
-  ValidationConfig, 
-  CSVData, 
-  Report, 
-  ValidationResult,
-  ReportSummary,
-  ReportFormat,
+import { BrowserAgent } from '../automation/browser-agent.js';
+import { EvidenceCollector } from '../evidence/evidence-collector.js';
+import { LocalLLMEngine } from '../llm/local-llm-engine.js';
+import { ReportGenerator } from '../reporting/report-generator.js';
+import type {
   BrowserSettings,
-  CSVRow,
-  LLMSettings,
-  EvidenceSettings,
   CrewConfig,
-  OCRSettings,
-  FieldValidation,
+  CSVRow,
+  EvidenceSettings,
   ExtractedWebData,
-  ExtractionMethod
+  ExtractionMethod,
+  FieldValidation,
+  LLMSettings,
+  Report,
+  ReportFormat,
+  ReportSummary,
+  ValidationConfig,
+  ValidationResult
 } from '../types/index.js';
+import { CSVLoader } from './csv-loader.js';
+import { Logger } from './logger.js';
 
 export interface TaskmasterOptions {
   outputPath: string;
@@ -44,7 +42,7 @@ export class TaskmasterController {
     this.logger = Logger.getInstance();
     this.csvLoader = new CSVLoader();
     this.reportGenerator = new ReportGenerator();
-    
+
     // Initialize browser agent with default settings
     const browserSettings: BrowserSettings = {
       headless: true,
@@ -52,10 +50,10 @@ export class TaskmasterController {
       timeout: 30000,
       userAgent: 'DataHawk/1.0'
     };
-    
-    this.browserAgent = new BrowserAgent({ 
+
+    this.browserAgent = new BrowserAgent({
       settings: browserSettings,
-      headless: true 
+      headless: true
     });
 
     // Initialize LLM engine with default settings
@@ -83,7 +81,7 @@ export class TaskmasterController {
       compressionAfter: 7,
       includeInReports: true
     };
-    
+
     this.evidenceCollector = new EvidenceCollector({
       settings: evidenceSettings,
       baseOutputPath: './data/output' // Default, will be updated in execute()
@@ -116,11 +114,11 @@ export class TaskmasterController {
       const { ConfigManager } = await import('./config-manager.js');
       const configManager = new ConfigManager();
       const config = await configManager.loadValidationConfig(options.configPath);
-      
+
       // Load CSV data
       const csvData = await this.csvLoader.load(options.inputPath);
       let rows = csvData.rows;
-      
+
       // Apply row limit if specified
       if (options.maxRows && options.maxRows > 0) {
         rows = rows.slice(0, options.maxRows);
@@ -129,7 +127,7 @@ export class TaskmasterController {
       // Initialize engines
       await this.browserAgent.initialize();
       await this.llmEngine.initialize();
-      
+
       // Initialize CrewAI orchestrator with engines
       await this.crewOrchestrator.initialize(
         this.browserAgent,
@@ -153,7 +151,7 @@ export class TaskmasterController {
       // Process each row
       for (let i = 0; i < rows.length; i++) {
         const csvRow = { ...rows[i], _index: i };
-        
+
         try {
           if (options.onProgress) {
             options.onProgress(Math.round((i / rows.length) * 100));
@@ -191,8 +189,8 @@ export class TaskmasterController {
               fieldValidations,
               validations: fieldValidations,
               overallMatch: fieldValidations.some(v => v.match),
-              overallConfidence: fieldValidations.length > 0 
-                ? fieldValidations.reduce((sum, v) => sum + v.confidence, 0) / fieldValidations.length 
+              overallConfidence: fieldValidations.length > 0
+                ? fieldValidations.reduce((sum, v) => sum + v.confidence, 0) / fieldValidations.length
                 : 0,
               processingTime: crewResult.processingTime || 0,
               evidenceId: `evidence-${i}`,
@@ -215,13 +213,13 @@ export class TaskmasterController {
               : 0;
 
             totalConfidence += avgConfidence;
-            
+
             if ((validationResult.validations || []).some(v => v.match)) {
               successfulValidations++;
             }
           } else {
             errorCount++;
-            
+
             // Add error result
             const webData: ExtractedWebData = {
               domData: {},
@@ -266,7 +264,7 @@ export class TaskmasterController {
         } catch (error) {
           errorCount++;
           this.logger.error('Row validation failed', { rowIndex: i, error });
-          
+
           const errorResult: ValidationResult = {
             rowId: `row-${i}`,
             rowIndex: i,
@@ -418,7 +416,7 @@ export class TaskmasterController {
     if (this.browserAgent && typeof this.browserAgent.cleanup === 'function') {
       await this.browserAgent.cleanup();
     }
-    
+
     if (this.llmEngine && typeof (this.llmEngine as any).cleanup === 'function') {
       await (this.llmEngine as any).cleanup();
     }
@@ -447,16 +445,16 @@ export class TaskmasterController {
       // 2. Validate CSV structure
       const csvValidation = await this.csvLoader.validateRows(csvData.rows);
       if (!csvValidation.valid) {
-        this.logger.warn('CSV validation warnings found', { 
+        this.logger.warn('CSV validation warnings found', {
           errors: csvValidation.errors.length,
-          warnings: csvValidation.warnings.length 
+          warnings: csvValidation.warnings.length
         });
       }
 
       // 3. Initialize all components
       this.logger.info('Initializing browser agent...');
       await this.browserAgent.initialize();
-      
+
       this.logger.info('Initializing LLM engine...');
       await this.llmEngine.initialize();
 
@@ -477,11 +475,11 @@ export class TaskmasterController {
       this.logger.info('Initializing CrewAI orchestrator...');
       // Create a temporary OCR engine for CrewAI
       const { OCREngine } = await import('../ocr/ocr-engine.js');
-      const tempOcrEngine = new OCREngine({ 
-        settings: { language: 'eng+por', mode: 6, confidenceThreshold: 0.7, imagePreprocessing: { enabled: true, operations: ['grayscale', 'contrast_enhance'] } } 
+      const tempOcrEngine = new OCREngine({
+        settings: { language: 'eng+por', mode: 6, confidenceThreshold: 0.7, imagePreprocessing: { enabled: true, operations: ['grayscale', 'contrast_enhance'] } }
       });
       await tempOcrEngine.initialize();
-      
+
       await this.crewOrchestrator.initialize(
         this.browserAgent,
         this.llmEngine,
@@ -702,8 +700,8 @@ export class TaskmasterController {
 
       // 5. Generate and save reports
       const generatedFiles = await this.reportGenerator.generateReports(
-        report, 
-        options.outputPath, 
+        report,
+        options.outputPath,
         options.reportFormats
       );
 
@@ -753,18 +751,18 @@ export class TaskmasterController {
   private compareValues(csvValue: any, webValue: any): boolean {
     if (csvValue === null || csvValue === undefined) return false;
     if (webValue === null || webValue === undefined) return false;
-    
+
     // Convert both to strings and normalize
     const csvStr = String(csvValue).toLowerCase().trim();
     const webStr = String(webValue).toLowerCase().trim();
-    
+
     // Direct match
     if (csvStr === webStr) return true;
-    
+
     // Partial match for longer strings
     if (csvStr.length > 3 && webStr.includes(csvStr)) return true;
     if (webStr.length > 3 && csvStr.includes(webStr)) return true;
-    
+
     return false;
   }
 }
