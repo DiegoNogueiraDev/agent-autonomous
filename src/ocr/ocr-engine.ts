@@ -231,10 +231,27 @@ export class OCREngine {
     options: ImagePreprocessingOptions = {}
   ): Promise<Buffer> {
     try {
+      // Validate input buffer
+      if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
+        this.logger.warn('Invalid or empty image buffer, returning original');
+        return imageBuffer;
+      }
+
       let image = sharp(imageBuffer);
 
-      // Get image metadata
-      const metadata = await image.metadata();
+      // Get image metadata with error handling
+      let metadata;
+      try {
+        metadata = await image.metadata();
+        if (!metadata.width || !metadata.height) {
+          this.logger.warn('Invalid image dimensions, skipping preprocessing');
+          return imageBuffer;
+        }
+      } catch (metadataError) {
+        this.logger.warn('Failed to get image metadata, returning original buffer', { error: metadataError });
+        return imageBuffer;
+      }
+
       this.logger.debug('Image preprocessing started', {
         width: metadata.width,
         height: metadata.height,
@@ -242,44 +259,91 @@ export class OCREngine {
         options
       });
 
-      // Apply cropping if specified
-      if (options.cropRegion) {
-        const { left, top, width, height } = options.cropRegion;
-        image = image.extract({ left, top, width, height });
-        this.logger.debug('Applied crop region', options.cropRegion);
+      // Apply each transformation with individual error handling
+      try {
+        // Apply cropping if specified
+        if (options.cropRegion) {
+          const { left, top, width, height } = options.cropRegion;
+          // Validate crop region
+          if (left >= 0 && top >= 0 && width > 0 && height > 0 && 
+              left + width <= metadata.width! && top + height <= metadata.height!) {
+            image = image.extract({ left, top, width, height });
+            this.logger.debug('Applied crop region', options.cropRegion);
+          } else {
+            this.logger.warn('Invalid crop region, skipping', options.cropRegion);
+          }
+        }
+      } catch (cropError) {
+        this.logger.warn('Crop operation failed, continuing without crop', { error: cropError });
       }
 
-      // Scale image if specified
-      if (options.scale && options.scale !== 1) {
-        const newWidth = Math.round((metadata.width || 0) * options.scale);
-        const newHeight = Math.round((metadata.height || 0) * options.scale);
-        image = image.resize(newWidth, newHeight);
-        this.logger.debug('Applied scaling', { scale: options.scale, newWidth, newHeight });
+      try {
+        // Scale image if specified
+        if (options.scale && options.scale !== 1 && options.scale > 0 && options.scale < 10) {
+          const newWidth = Math.round((metadata.width || 0) * options.scale);
+          const newHeight = Math.round((metadata.height || 0) * options.scale);
+          if (newWidth > 0 && newHeight > 0) {
+            image = image.resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3 });
+            this.logger.debug('Applied scaling', { scale: options.scale, newWidth, newHeight });
+          }
+        }
+      } catch (scaleError) {
+        this.logger.warn('Scaling operation failed, continuing without scale', { error: scaleError });
       }
 
-      // Convert to grayscale for better OCR performance
-      image = image.grayscale();
-
-      // Enhance contrast if requested
-      if (options.enhanceContrast) {
-        image = image.normalise();
-        this.logger.debug('Applied contrast enhancement');
+      try {
+        // Convert to grayscale for better OCR performance
+        image = image.grayscale();
+      } catch (grayscaleError) {
+        this.logger.warn('Grayscale conversion failed, continuing with original', { error: grayscaleError });
       }
 
-      // Apply threshold for binarization
-      if (options.threshold !== undefined) {
-        image = image.threshold(options.threshold);
-        this.logger.debug('Applied threshold', { threshold: options.threshold });
+      try {
+        // Enhance contrast if requested
+        if (options.enhanceContrast) {
+          image = image.normalise();
+          this.logger.debug('Applied contrast enhancement');
+        }
+      } catch (contrastError) {
+        this.logger.warn('Contrast enhancement failed, continuing without enhancement', { error: contrastError });
       }
 
-      // Denoise if requested
-      if (options.denoise) {
-        image = image.median(3);
-        this.logger.debug('Applied denoising');
+      try {
+        // Apply threshold for binarization
+        if (options.threshold !== undefined && options.threshold >= 0 && options.threshold <= 255) {
+          image = image.threshold(options.threshold);
+          this.logger.debug('Applied threshold', { threshold: options.threshold });
+        }
+      } catch (thresholdError) {
+        this.logger.warn('Threshold operation failed, continuing without threshold', { error: thresholdError });
       }
 
-      // Convert to PNG format for consistency
-      const processedBuffer = await image.png().toBuffer();
+      try {
+        // Denoise if requested
+        if (options.denoise) {
+          image = image.median(3);
+          this.logger.debug('Applied denoising');
+        }
+      } catch (denoiseError) {
+        this.logger.warn('Denoise operation failed, continuing without denoise', { error: denoiseError });
+      }
+
+      // Convert to PNG format for consistency with final error handling
+      let processedBuffer: Buffer;
+      try {
+        processedBuffer = await image.png().toBuffer();
+      } catch (pngError) {
+        this.logger.warn('PNG conversion failed, trying JPEG format', { error: pngError });
+        try {
+          processedBuffer = await image.jpeg({ quality: 90 }).toBuffer();
+        } catch (jpegError) {
+          this.logger.error('Both PNG and JPEG conversion failed, returning original buffer', { 
+            pngError, 
+            jpegError 
+          });
+          return imageBuffer;
+        }
+      }
       
       this.logger.debug('Image preprocessing completed', {
         originalSize: imageBuffer.length,
@@ -289,8 +353,9 @@ export class OCREngine {
       return processedBuffer;
 
     } catch (error) {
-      this.logger.error('Image preprocessing failed', error);
-      throw new Error(`Image preprocessing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      this.logger.error('Image preprocessing failed completely, returning original buffer', { error });
+      // Return original buffer as fallback instead of throwing
+      return imageBuffer;
     }
   }
 
@@ -309,10 +374,17 @@ export class OCREngine {
     this.processingStats.totalImages++;
 
     try {
-      // Preprocess the image
-      const processedImage = await this.preprocessImage(imageBuffer, preprocessingOptions);
+      // Try preprocessing first, but fall back to original if it fails
+      let processedImage: Buffer;
+      try {
+        processedImage = await this.preprocessImage(imageBuffer, preprocessingOptions);
+        this.logger.debug('Image preprocessing successful');
+      } catch (preprocessError) {
+        this.logger.warn('Image preprocessing failed, using original image', { error: preprocessError });
+        processedImage = imageBuffer;
+      }
 
-      // Extract text from processed image
+      // Extract text from processed (or original) image
       const result = await this.extractText(processedImage);
 
       // Update statistics
@@ -329,8 +401,31 @@ export class OCREngine {
       return result;
 
     } catch (error) {
-      this.logger.error('OCR extraction with preprocessing failed', error);
-      throw error;
+      this.logger.error('OCR extraction with preprocessing failed', { error });
+      
+      // Try one more time with just the original buffer and minimal processing
+      try {
+        this.logger.info('Attempting OCR fallback with original image buffer');
+        const fallbackResult = await this.extractText(imageBuffer);
+        
+        this.logger.warn('OCR fallback succeeded', {
+          confidence: fallbackResult.confidence,
+          wordCount: fallbackResult.words.length
+        });
+        
+        return fallbackResult;
+      } catch (fallbackError) {
+        this.logger.error('OCR fallback also failed', { fallbackError });
+        
+        // Return empty result instead of throwing
+        return {
+          text: '',
+          confidence: 0,
+          words: [],
+          lines: [],
+          processingTime: Date.now() - startTime
+        };
+      }
     }
   }
 

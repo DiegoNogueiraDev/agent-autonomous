@@ -103,15 +103,19 @@ export interface NormalizationSettings {
 
 export interface ValidationResult {
   rowId: string;
+  rowIndex?: number;
   csvData: CSVRow;
   webData: ExtractedWebData;
   fieldValidations: FieldValidation[];
+  validations?: FieldValidation[];
   overallMatch: boolean;
   overallConfidence: number;
   processingTime: number;
   evidenceId: string;
   errors: ValidationError[];
   metadata: ValidationMetadata;
+  timestamp?: string;
+  evidence?: any;
 }
 
 export interface FieldValidation {
@@ -142,10 +146,14 @@ export interface ExtractedWebData {
 export interface Screenshot {
   id: string;
   base64Data: string;
+  data?: string;
+  filename?: string;
   region?: BoundingBox;
+  boundingBox?: any;
   timestamp: Date;
   quality: number;
-  type: 'png' | 'jpeg';
+  type: 'png' | 'jpeg' | 'element' | 'full-page';
+  dimensions?: { width: number; height: number };
 }
 
 export interface BoundingBox {
@@ -162,6 +170,8 @@ export interface PageMetadata {
   timestamp: Date;
   viewportSize: { width: number; height: number };
   userAgent: string;
+  loadState?: string;
+  viewport?: { width: number; height: number };
 }
 
 // ==================== CrewAI Types ====================
@@ -247,6 +257,9 @@ export interface NavigationResult {
   success: boolean;
   url: string;
   loadTime: number;
+  statusCode?: number;
+  redirectCount?: number;
+  error?: string;
   errors: string[];
   redirects: string[];
   finalUrl: string;
@@ -354,9 +367,18 @@ export interface ReportSummary {
   averageConfidence: number;
   processingTime: number;
   errorRate: number;
+  performance?: {
+    totalTasks: number;
+    averageTaskTime: number;
+    successRate: number;
+    rowsPerSecond?: number;
+    averageRowTime?: number;
+  };
 }
 
 export interface ReportStatistics {
+  totalRows?: number;
+  validRows?: number;
   confidenceDistribution: Record<string, number>;
   extractionMethodUsage: Record<ExtractionMethod, number>;
   fieldAccuracy: Record<string, number>;
@@ -376,12 +398,13 @@ export interface PerformanceMetrics {
 // ==================== Error Types ====================
 
 export interface ValidationError {
-  type: ErrorType;
+  type?: ErrorType;
   message: string;
   field?: string;
   code: string;
-  timestamp: Date;
-  recoverable: boolean;
+  severity?: string;
+  timestamp?: Date;
+  recoverable?: boolean;
   context?: Record<string, any>;
 }
 
@@ -432,9 +455,13 @@ export interface TimeoutSettings {
 
 export interface EvidenceSettings {
   retentionDays: number;
+  retention?: number;
   screenshotEnabled: boolean;
+  screenshots?: boolean;
   domSnapshotEnabled: boolean;
+  domSnapshots?: boolean;
   compressionEnabled: boolean;
+  compressionAfter?: number;
   includeInReports: boolean;
 }
 
@@ -492,6 +519,8 @@ export interface ReportMetadata {
   format: ReportFormat[];
   size: number;
   checksum?: string;
+  configFile?: string;
+  inputFile?: string;
 }
 
 export type ReportFormat = 'json' | 'html' | 'markdown' | 'csv';

@@ -103,7 +103,8 @@ export class LocalLLMEngine {
       // For now, use a stub implementation that simulates the real behavior
       this.llama = await this.createLlamaStub(modelPath);
     } catch (error) {
-      throw new Error(`Failed to initialize llama-cpp: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to initialize llama-cpp: ${errorMessage}`);
     }
   }
 
@@ -147,8 +148,8 @@ export class LocalLLMEngine {
     const webValue = webMatch ? webMatch[1] : '';
     
     // Simple validation logic
-    const normalized1 = this.normalizeForComparison(csvValue);
-    const normalized2 = this.normalizeForComparison(webValue);
+    const normalized1 = this.normalizeForComparison(csvValue || '');
+    const normalized2 = this.normalizeForComparison(webValue || '');
     const match = normalized1 === normalized2;
     const confidence = match ? 0.95 : 0.15;
     
@@ -220,7 +221,7 @@ export class LocalLLMEngine {
       const processingTime = Date.now() - startTime;
       this.logger.error('Failed to make validation decision', {
         fieldName: request.fieldName,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         processingTime
       });
 
@@ -228,10 +229,10 @@ export class LocalLLMEngine {
       return {
         match: false,
         confidence: 0.0,
-        reasoning: `Error during validation: ${error.message}`,
+        reasoning: `Error during validation: ${error instanceof Error ? error.message : String(error)}`,
         normalizedCsvValue: request.csvValue,
         normalizedWebValue: request.webValue,
-        issues: [`LLM processing error: ${error.message}`]
+        issues: [`LLM processing error: ${error instanceof Error ? error.message : String(error)}`]
       };
     }
   }
@@ -294,7 +295,8 @@ Respond in JSON format:
       };
 
     } catch (error) {
-      throw new Error(`LLM query failed: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`LLM query failed: ${errorMessage}`);
     }
   }
 

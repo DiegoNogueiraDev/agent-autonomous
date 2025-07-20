@@ -220,7 +220,7 @@ export class EnhancedBrowserAgent {
         ocrData,
         screenshots,
         pageMetadata,
-        extractionMethods,
+        extractionMethods: extractionMethods as Record<string, any>,
         extractionConfidence
       };
 
@@ -317,7 +317,7 @@ export class EnhancedBrowserAgent {
     confidence: number;
   }> {
     try {
-      const tagName = await element.evaluate(el => el.tagName.toLowerCase());
+      const tagName = await element.evaluate(el => (el as Element).tagName.toLowerCase());
       let value: any;
       let method = 'dom_extraction';
       let confidence = 0.9;
@@ -343,7 +343,7 @@ export class EnhancedBrowserAgent {
         default:
           // Try textContent first, then innerText
           value = await element.evaluate(el => {
-            return el.textContent?.trim() || el.innerText?.trim() || '';
+            return el.textContent?.trim() || (el as any).innerText?.trim() || '';
           });
           break;
       }
@@ -388,7 +388,7 @@ export class EnhancedBrowserAgent {
       this.logger.debug('Attempting OCR fallback', { field: mapping.csvField });
 
       // Convert screenshot to buffer for OCR processing
-      const imageBuffer = Buffer.from(screenshot.data, 'base64');
+      const imageBuffer = Buffer.from(screenshot.data || screenshot.base64Data, 'base64');
       
       // Perform OCR extraction
       const ocrResult: OCRResult = await this.ocrEngine.extractText(imageBuffer);
@@ -466,7 +466,7 @@ export class EnhancedBrowserAgent {
           // Extract value after field name
           const parts = contextLine.split(/[:=]/);
           if (parts.length > 1) {
-            return parts[1].trim();
+            return parts[1]?.trim();
           }
         }
         
@@ -525,17 +525,20 @@ export class EnhancedBrowserAgent {
     if (!this.page) throw new Error('Page not available');
 
     try {
-      // Scroll element into view and highlight
+      // Scroll element into view
       await element.scrollIntoViewIfNeeded();
-      await element.highlight();
+      // Note: highlight() not available in all Playwright versions
       
       const boundingBox = await element.boundingBox();
       const screenshotBuffer = await element.screenshot({ type: 'png' });
       
       return {
+        id: filename,
         filename,
+        base64Data: screenshotBuffer.toString('base64'),
         data: screenshotBuffer.toString('base64'),
         timestamp: new Date(),
+        quality: 90,
         type: 'element',
         boundingBox: boundingBox ? {
           x: Math.round(boundingBox.x),
@@ -564,9 +567,12 @@ export class EnhancedBrowserAgent {
       });
       
       return {
+        id: filename,
         filename,
+        base64Data: screenshotBuffer.toString('base64'),
         data: screenshotBuffer.toString('base64'),
         timestamp: new Date(),
+        quality: 90,
         type: 'full-page'
       };
 
@@ -601,9 +607,14 @@ export class EnhancedBrowserAgent {
       });
 
       return {
-        ...metadata,
+        url: metadata.url,
+        title: metadata.title,
+        userAgent: metadata.userAgent,
+        loadTime: 0, // Will be set by caller
         timestamp: new Date(),
-        loadState: await this.page.evaluate(() => document.readyState)
+        viewportSize: metadata.viewport,
+        loadState: await this.page.evaluate(() => document.readyState),
+        viewport: metadata.viewport
       };
 
     } catch (error) {
@@ -612,6 +623,8 @@ export class EnhancedBrowserAgent {
         title: '',
         url: this.page.url(),
         userAgent: '',
+        loadTime: 0,
+        viewportSize: { width: 0, height: 0 },
         viewport: { width: 0, height: 0 },
         timestamp: new Date(),
         loadState: 'unknown'

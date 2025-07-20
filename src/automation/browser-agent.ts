@@ -597,6 +597,13 @@ export class BrowserAgent {
   }
 
   /**
+   * Cleanup method for compatibility
+   */
+  async cleanup(): Promise<void> {
+    await this.close();
+  }
+
+  /**
    * Close browser and cleanup
    */
   async close(): Promise<void> {

@@ -70,10 +70,15 @@ export class TaskmasterController {
 
     // Initialize Evidence Collector with default settings if no config provided
     const evidenceSettings: EvidenceSettings = this.config?.evidence || {
+      retentionDays: 30,
       retention: 30,
+      screenshotEnabled: true,
       screenshots: true,
+      domSnapshotEnabled: true,
       domSnapshots: true,
-      compressionAfter: 7
+      compressionEnabled: true,
+      compressionAfter: 7,
+      includeInReports: true
     };
     
     this.evidenceCollector = new EvidenceCollector({
@@ -163,45 +168,94 @@ export class TaskmasterController {
             const validations = crewResult.validationResults.validationResults || crewResult.validationResults;
             const webData = crewResult.extractionResults?.extractedData || {};
 
+            const fieldValidations: FieldValidation[] = Array.isArray(validations) ? validations.map((v: any) => ({
+              field: config.fieldMappings.find(m => m.csvField in csvRow)?.csvField || 'unknown',
+              csvValue: csvRow[v.field] || null,
+              webValue: v.webValue || null,
+              normalizedCsvValue: csvRow[v.field] || null,
+              normalizedWebValue: v.webValue || null,
+              match: v.match || false,
+              confidence: v.confidence || 0,
+              method: v.method || 'crew_ai',
+              reasoning: v.reasoning || 'Validated by CrewAI multi-agent system'
+            })) : [];
+
             const validationResult: ValidationResult = {
+              rowId: `row-${i}`,
               rowIndex: i,
               csvData: csvRow,
               webData,
-              validations: Array.isArray(validations) ? validations.map((v: any) => ({
-                field: config.fieldMappings.find(m => m.csvField in csvRow)?.csvField || 'unknown',
-                match: v.match || false,
-                confidence: v.confidence || 0,
-                method: v.method || 'crew_ai',
-                reasoning: v.reasoning || 'Validated by CrewAI multi-agent system'
-              })) : [],
+              fieldValidations,
+              validations: fieldValidations,
+              overallMatch: fieldValidations.some(v => v.match),
+              overallConfidence: fieldValidations.length > 0 
+                ? fieldValidations.reduce((sum, v) => sum + v.confidence, 0) / fieldValidations.length 
+                : 0,
               processingTime: crewResult.processingTime || 0,
+              evidenceId: `evidence-${i}`,
+              errors: [],
+              metadata: {
+                version: '1.1.0',
+                timestamp: new Date(),
+                processingNode: 'main',
+                configurationHash: '',
+                modelVersion: ''
+              },
               timestamp: new Date().toISOString()
             };
 
             results.push(validationResult);
 
             // Calculate metrics
-            const avgConfidence = validationResult.validations.length > 0
+            const avgConfidence = validationResult.validations?.length > 0
               ? validationResult.validations.reduce((sum, v) => sum + v.confidence, 0) / validationResult.validations.length
               : 0;
 
             totalConfidence += avgConfidence;
             
-            if (validationResult.validations.some(v => v.match)) {
+            if (validationResult.validations?.some(v => v.match)) {
               successfulValidations++;
             }
           } else {
             errorCount++;
             
             // Add error result
+            const webData: ExtractedWebData = {
+              domData: {},
+              ocrData: {},
+              screenshots: [],
+              pageMetadata: {
+                url: '',
+                title: '',
+                loadTime: 0,
+                timestamp: new Date(),
+                viewportSize: { width: 0, height: 0 },
+                userAgent: ''
+              },
+              extractionMethods: {},
+              extractionConfidence: {}
+            };
+
             const errorResult: ValidationResult = {
+              rowId: `row-${i}`,
               rowIndex: i,
               csvData: csvRow,
-              webData: {},
+              webData,
+              fieldValidations: [],
               validations: [],
+              overallMatch: false,
+              overallConfidence: 0,
               processingTime: crewResult.processingTime || 0,
-              timestamp: new Date().toISOString(),
-              error: crewResult.error || 'Validation failed'
+              evidenceId: `error-${i}`,
+              errors: [{ message: crewResult.error || 'Validation failed', code: 'VALIDATION_ERROR', field: '', severity: 'error' }],
+              metadata: {
+                version: '1.1.0',
+                timestamp: new Date(),
+                processingNode: 'main',
+                configurationHash: '',
+                modelVersion: ''
+              },
+              timestamp: new Date().toISOString()
             };
 
             results.push(errorResult);
@@ -241,15 +295,13 @@ export class TaskmasterController {
         processingTime,
         errorRate,
         performance: {
+          totalTasks: results.length,
+          averageTaskTime: results.length > 0 ? processingTime / results.length : 0,
+          successRate: results.length > 0 ? successfulValidations / results.length : 0,
           rowsPerSecond: processingTime > 0 ? (results.length / (processingTime / 1000)) : 0,
           averageRowTime: results.length > 0 ? processingTime / results.length : 0
         },
-        validationBreakdown: {
-          exact_matches: results.filter(r => r.validations.some(v => v.match && v.confidence > 0.9)).length,
-          fuzzy_matches: results.filter(r => r.validations.some(v => v.match && v.confidence <= 0.9)).length,
-          no_matches: results.filter(r => !r.validations.some(v => v.match)).length,
-          errors: errorCount
-        }
+        failedValidations: errorCount
       };
 
       // Create final report object
@@ -258,16 +310,30 @@ export class TaskmasterController {
         results,
         statistics: {
           totalRows: results.length,
-          validRows: results.filter(r => !r.error).length,
-          invalidRows: results.filter(r => r.error).length,
-          averageProcessingTime: results.length > 0 ? processingTime / results.length : 0
+          validRows: results.filter(r => r.errors.length === 0).length,
+          confidenceDistribution: {},
+          extractionMethodUsage: {},
+          fieldAccuracy: {},
+          errorsByType: {},
+          performanceMetrics: {
+            avgTimePerRow: results.length > 0 ? processingTime / results.length : 0,
+            memoryUsagePeak: 0,
+            cpuUtilizationAvg: 0,
+            accuracyRate: successfulValidations / Math.max(results.length, 1),
+            ocrFallbackRate: 0,
+            errorRate
+          }
         },
         timestamp: new Date(),
         version: '1.1.0',
-        config: {
+        configuration: this.config!,
+        metadata: {
+          generatedBy: 'DataHawk Taskmaster',
+          version: '1.1.0',
+          format: options.formats,
+          size: 0,
           inputFile: options.inputPath,
-          configFile: options.configPath,
-          outputPath: options.outputPath
+          configFile: options.configPath
         }
       };
 
@@ -319,7 +385,7 @@ export class TaskmasterController {
    */
   async execute(csvPath: string, options: TaskmasterOptions): Promise<Report> {
     const startTime = Date.now();
-    this.logger.info('Starting DataHawk validation process', { csvPath, config: this.config.targetUrl });
+    this.logger.info('Starting DataHawk validation process', { csvPath, config: this.config?.targetUrl });
 
     try {
       // 1. Load and validate CSV
@@ -349,7 +415,13 @@ export class TaskmasterController {
       this.logger.info('Initializing evidence collector...');
       // Update evidence collector with correct output path
       this.evidenceCollector = new EvidenceCollector({
-        settings: this.config.evidence,
+        settings: this.config?.evidence || {
+          retentionDays: 30,
+          screenshotEnabled: true,
+          domSnapshotEnabled: true,
+          compressionEnabled: false,
+          includeInReports: true
+        },
         baseOutputPath: options.outputPath
       });
       await this.evidenceCollector.initialize();
@@ -386,18 +458,18 @@ export class TaskmasterController {
           // Use CrewAI multi-agent orchestration for validation
           const crewResult = await this.crewOrchestrator.executeRowValidation(
             row as CSVRow,
-            this.config.fieldMappings,
-            this.config
+            this.config?.fieldMappings || [],
+            this.config!
           );
 
           // Extract results from CrewAI orchestration
           const navigationResult = crewResult.navigationResult || {
             success: false,
-            url: this.config.targetUrl,
+            url: this.config?.targetUrl || '',
             loadTime: 0,
             errors: ['CrewAI navigation failed'],
             redirects: [],
-            finalUrl: this.config.targetUrl
+            finalUrl: this.config?.targetUrl || ''
           };
 
           let webData: any = crewResult.extractionResults || {
@@ -405,7 +477,7 @@ export class TaskmasterController {
             ocrData: {},
             screenshots: [],
             pageMetadata: {
-              url: this.config.targetUrl,
+              url: this.config?.targetUrl || '',
               title: 'Navigation Failed',
               loadTime: navigationResult.loadTime,
               timestamp: new Date(),

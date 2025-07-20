@@ -1,0 +1,339 @@
+{
+  "id": "report_1752974205149",
+  "timestamp": "2025-07-20T01:16:45.149Z",
+  "summary": {
+    "totalRows": 5,
+    "processedRows": 5,
+    "successfulValidations": 5,
+    "failedValidations": 0,
+    "averageConfidence": 0,
+    "processingTime": 128159,
+    "errorRate": 0
+  },
+  "results": [
+    {
+      "rowId": "1",
+      "csvData": {
+        "id": "1",
+        "name": "John Doe",
+        "email": "john@example.com",
+        "age": "30",
+        "status": "active"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {},
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [],
+        "warnings": [
+          "Extraction failed: page.screenshot: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - taking page screenshot\u001b[22m\n\u001b[2m  - waiting for fonts to load...\u001b[22m\n\u001b[2m  - fonts loaded\u001b[22m\n"
+        ]
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 60009,
+      "evidenceId": "ev_1752974137492_c8mig1",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T01:15:37.492Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "2",
+      "csvData": {
+        "id": "2",
+        "name": "Jane Smith",
+        "email": "jane@example.com",
+        "age": "25",
+        "status": "active"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {},
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [],
+        "warnings": [
+          "Extraction failed: page.screenshot: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - taking page screenshot\u001b[22m\n\u001b[2m  - waiting for fonts to load...\u001b[22m\n\u001b[2m  - fonts loaded\u001b[22m\n"
+        ]
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 60006,
+      "evidenceId": "ev_1752974197498_84r9rg",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T01:16:37.498Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "3",
+      "csvData": {
+        "id": "3",
+        "name": "Bob Johnson",
+        "email": "bob@example.com",
+        "age": "35",
+        "status": "inactive"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "name": "Example Domain",
+          "email": "This domain is for use in illustrative examples in documents. You may use this\n    domain in literature without prior coordination or asking for permission."
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 2680,
+      "evidenceId": "ev_1752974200179_avw9ai",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T01:16:40.179Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "4",
+      "csvData": {
+        "id": "4",
+        "name": "Alice Brown",
+        "email": "alice@example.com",
+        "age": "28",
+        "status": "active"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "name": "Example Domain",
+          "email": "This domain is for use in illustrative examples in documents. You may use this\n    domain in literature without prior coordination or asking for permission."
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 2049,
+      "evidenceId": "ev_1752974202229_ypfgbk",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T01:16:42.229Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "5",
+      "csvData": {
+        "id": "5",
+        "name": "Charlie Wilson",
+        "email": "charlie@example.com",
+        "age": "42",
+        "status": "pending"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "name": "Example Domain",
+          "email": "This domain is for use in illustrative examples in documents. You may use this\n    domain in literature without prior coordination or asking for permission."
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 1882,
+      "evidenceId": "ev_1752974204111_534ybq",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T01:16:44.111Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    }
+  ],
+  "statistics": {
+    "confidenceDistribution": {
+      "high (0.9-1.0)": 0,
+      "medium (0.7-0.9)": 0,
+      "low (0.5-0.7)": 0,
+      "very_low (0-0.5)": 5
+    },
+    "extractionMethodUsage": {
+      "dom": 5,
+      "ocr": 0,
+      "fuzzy": 0,
+      "manual": 0
+    },
+    "fieldAccuracy": {},
+    "errorsByType": {},
+    "performanceMetrics": {
+      "avgTimePerRow": 25631.8,
+      "memoryUsagePeak": 31.66230010986328,
+      "cpuUtilizationAvg": 0,
+      "accuracyRate": 1,
+      "ocrFallbackRate": 0,
+      "errorRate": 0
+    }
+  },
+  "configuration": {
+    "targetUrl": "https://example.com",
+    "fieldMappings": [
+      {
+        "csvField": "name",
+        "webSelector": "h1",
+        "fieldType": "text",
+        "required": true,
+        "validationStrategy": "dom_extraction"
+      },
+      {
+        "csvField": "email",
+        "webSelector": "p",
+        "fieldType": "text",
+        "required": false,
+        "validationStrategy": "dom_extraction"
+      }
+    ],
+    "validationRules": {
+      "confidence": {
+        "minimumOverall": 0.8,
+        "minimumField": 0.7,
+        "ocrThreshold": 0.6,
+        "fuzzyMatchThreshold": 0.85
+      },
+      "fuzzyMatching": {
+        "enabled": true,
+        "algorithms": [
+          "levenshtein",
+          "jaro_winkler"
+        ],
+        "stringSimilarityThreshold": 0.85,
+        "numberTolerance": 0.001,
+        "caseInsensitive": true,
+        "ignoreWhitespace": true
+      },
+      "normalization": {
+        "whitespace": {
+          "trimLeading": true,
+          "trimTrailing": true,
+          "normalizeInternal": true
+        },
+        "case": {
+          "email": "lowercase",
+          "name": "title_case",
+          "text": "preserve"
+        },
+        "specialCharacters": {
+          "removeAccents": true,
+          "normalizeQuotes": true,
+          "normalizeDashes": true
+        },
+        "numbers": {
+          "decimalSeparator": ".",
+          "thousandSeparator": ",",
+          "currencySymbolRemove": true
+        },
+        "dates": {
+          "targetFormat": "YYYY-MM-DD",
+          "inputFormats": [
+            "MM/DD/YYYY",
+            "DD/MM/YYYY",
+            "YYYY-MM-DD"
+          ]
+        }
+      },
+      "errorHandling": {
+        "maxRetryAttempts": 3,
+        "retryDelayMs": 2000,
+        "exponentialBackoff": true,
+        "criticalErrors": [
+          "navigation_timeout",
+          "page_not_found"
+        ],
+        "recoverableErrors": [
+          "element_not_found",
+          "ocr_low_confidence"
+        ],
+        "escalationThreshold": 0.1
+      }
+    },
+    "performance": {
+      "batchProcessing": true,
+      "batchSize": 3,
+      "parallelWorkers": 3,
+      "caching": {
+        "domSnapshots": true,
+        "ocrResults": true,
+        "validationDecisions": false,
+        "ttl": 3600
+      },
+      "timeouts": {
+        "navigation": 30000,
+        "domExtraction": 15000,
+        "ocrProcessing": 45000,
+        "validationDecision": 30000,
+        "evidenceCollection": 10000
+      }
+    },
+    "evidence": {
+      "retentionDays": 30,
+      "screenshotEnabled": true,
+      "domSnapshotEnabled": true,
+      "compressionEnabled": true,
+      "includeInReports": true
+    }
+  },
+  "metadata": {
+    "generatedBy": "DataHawk v1.0.0",
+    "version": "1.0.0",
+    "format": [
+      "json",
+      "html"
+    ],
+    "size": 0
+  }
+}
