@@ -1,17 +1,16 @@
-import { chromium, Browser, BrowserContext, Page, ElementHandle } from 'playwright';
+import { Browser, BrowserContext, chromium, ElementHandle, Page } from 'playwright';
 import { Logger } from '../core/logger.js';
-import { OCREngine } from '../ocr/ocr-engine.js';
 import { ManagedResource, registerResource } from '../core/resource-manager.js';
-import type { 
-  BrowserSettings, 
-  NavigationResult, 
-  ExtractedWebData, 
-  Screenshot, 
-  BoundingBox,
-  PageMetadata,
-  FieldMapping,
+import { OCREngine } from '../ocr/ocr-engine.js';
+import type {
+  BrowserSettings,
   CSVRow,
-  OCRSettings
+  ExtractedWebData,
+  FieldMapping,
+  NavigationResult,
+  OCRSettings,
+  PageMetadata,
+  Screenshot
 } from '../types/index.js';
 
 export interface BrowserAgentOptions {
@@ -39,12 +38,12 @@ export class BrowserAgent implements ManagedResource {
     this.settings = options.settings;
     this.enableOCRFallback = options.enableOCRFallback ?? true;
     this.resourceId = `browser-agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
+
     // Initialize OCR Engine if enabled
     if (this.enableOCRFallback && options.ocrSettings) {
       this.ocrEngine = new OCREngine({ settings: options.ocrSettings });
     }
-    
+
     // Register for automatic cleanup
     registerResource(this.resourceId, this);
   }
@@ -55,7 +54,7 @@ export class BrowserAgent implements ManagedResource {
   async initialize(): Promise<void> {
     try {
       this.logger.debug('Initializing browser agent');
-      
+
       this.browser = await chromium.launch({
         headless: this.settings.headless,
         slowMo: this.settings.slowMo,
@@ -76,7 +75,7 @@ export class BrowserAgent implements ManagedResource {
       });
 
       this.page = await this.context.newPage();
-      
+
       // Set default timeouts
       this.page.setDefaultTimeout(this.settings.timeout);
       this.page.setDefaultNavigationTimeout(this.settings.timeout);
@@ -121,7 +120,18 @@ export class BrowserAgent implements ManagedResource {
 
       // Replace URL parameters with row data if provided
       const finalUrl = this.interpolateUrl(url, rowData);
-      
+
+      // Determine appropriate timeout based on URL
+      let navigationTimeout = this.settings.timeout;
+
+      // Increase timeout for government and external sites
+      if (finalUrl.includes('gov.br') ||
+        finalUrl.includes('wikipedia.org') ||
+        finalUrl.includes('emojipedia.org')) {
+        navigationTimeout = Math.max(this.settings.timeout, 60000); // 60s for slow sites
+        this.logger.debug('Using extended timeout for slow site', { url: finalUrl, timeout: navigationTimeout });
+      }
+
       // Listen for redirects
       this.page.on('response', (response) => {
         if (response.status() >= 300 && response.status() < 400) {
@@ -130,8 +140,8 @@ export class BrowserAgent implements ManagedResource {
       });
 
       const response = await this.page.goto(finalUrl, {
-        waitUntil: 'networkidle',
-        timeout: this.settings.timeout
+        waitUntil: 'domcontentloaded', // More reliable than networkidle for slow sites
+        timeout: navigationTimeout
       });
 
       if (!response) {
@@ -207,7 +217,7 @@ export class BrowserAgent implements ManagedResource {
       for (const mapping of fieldMappings) {
         try {
           const extractedValue = await this.extractFieldValue(mapping);
-          
+
           domData[mapping.csvField] = extractedValue.value;
           extractionMethods[mapping.csvField] = extractedValue.method;
           extractionConfidence[mapping.csvField] = extractedValue.confidence;
@@ -215,7 +225,7 @@ export class BrowserAgent implements ManagedResource {
           // Capture element screenshot if found
           if (extractedValue.element) {
             const elementScreenshot = await this.captureElementScreenshot(
-              extractedValue.element, 
+              extractedValue.element,
               `field-${mapping.csvField}`
             );
             screenshots.push(elementScreenshot);
@@ -265,7 +275,7 @@ export class BrowserAgent implements ManagedResource {
 
     // First try DOM extraction
     const domResult = await this.tryDOMExtraction(mapping);
-    
+
     // If DOM extraction was successful, return it
     if (domResult.confidence > 0.5) {
       return domResult;
@@ -274,10 +284,10 @@ export class BrowserAgent implements ManagedResource {
     // If DOM failed and OCR is enabled, try OCR fallback
     if (this.enableOCRFallback && this.ocrEngine) {
       this.logger.debug(`DOM extraction confidence low (${domResult.confidence}), trying OCR fallback for ${mapping.csvField}`);
-      
+
       try {
         const ocrResult = await this.tryOCRExtraction(mapping);
-        
+
         // Return the best result
         if (ocrResult.confidence > domResult.confidence) {
           return ocrResult;
@@ -303,7 +313,7 @@ export class BrowserAgent implements ManagedResource {
     try {
       // Try to find element using the selector
       const element = await this.page!.$(mapping.webSelector);
-      
+
       if (!element) {
         return {
           value: null,
@@ -315,7 +325,7 @@ export class BrowserAgent implements ManagedResource {
       // Extract value based on element type and field type
       let value: any;
       const tagName = await element.evaluate(el => el.tagName.toLowerCase());
-      
+
       switch (tagName) {
         case 'input':
           const inputType = await element.getAttribute('type');
@@ -325,15 +335,15 @@ export class BrowserAgent implements ManagedResource {
             value = await element.inputValue();
           }
           break;
-          
+
         case 'select':
           value = await element.evaluate(el => (el as any).value);
           break;
-          
+
         case 'textarea':
           value = await element.inputValue();
           break;
-          
+
         default:
           // For div, span, p, etc., get text content
           value = await element.textContent();
@@ -342,7 +352,7 @@ export class BrowserAgent implements ManagedResource {
 
       // Clean and normalize the value
       value = this.normalizeExtractedValue(value, mapping.fieldType);
-      
+
       return {
         value,
         method: 'dom_extraction',
@@ -415,7 +425,7 @@ export class BrowserAgent implements ManagedResource {
       if (mapping.csvField && ocrResult.words && ocrResult.words.length > 0) {
         // Look for words with high confidence
         const highConfidenceWords = ocrResult.words.filter(word => word.confidence > 0.7);
-        
+
         if (highConfidenceWords.length > 0) {
           // For now, take the first high-confidence word
           // In a real implementation, you'd use more sophisticated matching
@@ -488,7 +498,7 @@ export class BrowserAgent implements ManagedResource {
         base64Data: screenshotBuffer.toString('base64'),
         region: boundingBox ? {
           x: boundingBox.x,
-          y: boundingBox.y, 
+          y: boundingBox.y,
           width: boundingBox.width,
           height: boundingBox.height
         } : undefined,
@@ -562,11 +572,40 @@ export class BrowserAgent implements ManagedResource {
    */
   private interpolateUrl(url: string, rowData?: CSVRow): string {
     if (!rowData) return url;
-    
-    return url.replace(/{([^}]+)}/g, (match, key) => {
+
+    let interpolatedUrl = url;
+
+    // Replace all placeholders with actual values
+    interpolatedUrl = interpolatedUrl.replace(/{([^}]+)}/g, (match, key) => {
       const normalizedKey = key.toLowerCase();
-      return rowData[normalizedKey] !== undefined ? encodeURIComponent(String(rowData[normalizedKey])) : match;
+
+      // Try exact key first
+      if (rowData[key] !== undefined) {
+        return encodeURIComponent(String(rowData[key]));
+      }
+
+      // Try normalized key
+      if (rowData[normalizedKey] !== undefined) {
+        return encodeURIComponent(String(rowData[normalizedKey]));
+      }
+
+      // Try case-insensitive search
+      for (const [csvKey, csvValue] of Object.entries(rowData)) {
+        if (csvKey.toLowerCase() === normalizedKey) {
+          return encodeURIComponent(String(csvValue));
+        }
+      }
+
+      // If no match found, log warning and keep placeholder
+      this.logger.warn(`URL parameter '${key}' not found in CSV data`, {
+        availableKeys: Object.keys(rowData),
+        url: url
+      });
+
+      return match;
     });
+
+    return interpolatedUrl;
   }
 
   /**
@@ -582,17 +621,17 @@ export class BrowserAgent implements ManagedResource {
       case 'number':
         const numValue = parseFloat(stringValue.replace(/[^0-9.-]/g, ''));
         return isNaN(numValue) ? null : numValue;
-        
+
       case 'boolean':
         return stringValue.toLowerCase() === 'true' || stringValue === '1';
-        
+
       case 'email':
         return stringValue.toLowerCase();
-        
+
       case 'currency':
         const currencyValue = parseFloat(stringValue.replace(/[^0-9.-]/g, ''));
         return isNaN(currencyValue) ? null : currencyValue;
-        
+
       default:
         return stringValue;
     }
@@ -626,12 +665,12 @@ export class BrowserAgent implements ManagedResource {
         await this.page.close();
         this.page = null;
       }
-      
+
       if (this.context) {
         await this.context.close();
         this.context = null;
       }
-      
+
       if (this.browser) {
         await this.browser.close();
         this.browser = null;

@@ -98,7 +98,8 @@ export class LocalLLMEngine {
         this.logger.debug(`Checking LLM server at ${url}`);
         const response = await fetch(url, {
           method: 'GET',
-          headers: { 'Accept': 'application/json' }
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(5000) // 5 second timeout
         });
 
         if (response.ok) {
@@ -200,14 +201,16 @@ export class LocalLLMEngine {
           const response = await fetch(`${baseUrl}/validate`, {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
             },
             body: JSON.stringify({
               csv_value: request.csvValue,
               web_value: request.webValue,
               field_type: request.fieldType,
               field_name: request.fieldName
-            })
+            }),
+            signal: AbortSignal.timeout(30000) // 30 second timeout
           });
 
           if (!response.ok) {
@@ -227,6 +230,9 @@ export class LocalLLMEngine {
             processing_time: data.processing_time || 0
           };
         } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            throw new Error('LLM validation request timed out');
+          }
           throw new Error(`LLM validation request failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       }

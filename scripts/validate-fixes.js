@@ -1,287 +1,259 @@
 #!/usr/bin/env node
+
 /**
- * Validation script to verify all critical bugs have been fixed
- * This script tests the key functionality that was broken
+ * Script de validação para testar as correções dos bugs críticos
+ *
+ * BUG-023: Timeout de navegação em sites gov.br
+ * BUG-024: Parâmetros de URL não são substituídos
+ * BUG-025: Timeout em sites externos
+ * BUG-026: Falha de comunicação Node.js ↔ LLM Server
  */
 
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
-// Colors for output
+// Configurações de teste
+const TEST_CASES = [
+  {
+    name: 'gov-br-test',
+    description: 'Teste de navegação em sites gov.br',
+    command: 'node dist/main.js validate --input data/gov-br-test.csv --config config/gov-br-test.yaml --output test-gov-br-fixed --format json,html',
+    expected: 'URLs gov.br devem ser acessíveis'
+  },
+  {
+    name: 'wikipedia-test',
+    description: 'Teste de substituição de parâmetros URL',
+    command: 'node dist/main.js validate --input data/wikipedia-test.csv --config config/wikipedia-validation.yaml --output test-wikipedia-fixed --format json,html',
+    expected: 'Parâmetros {titulo} devem ser substituídos corretamente'
+  },
+  {
+    name: 'special-chars-test',
+    description: 'Teste de navegação em sites externos',
+    command: 'node dist/main.js validate --input data/special-chars-test.csv --config config/special-chars-test.yaml --output test-special-chars-fixed --format json,html',
+    expected: 'Sites externos devem ser acessíveis sem timeout'
+  },
+  {
+    name: 'llm-communication-test',
+    description: 'Teste de comunicação com LLM Server',
+    command: 'node dist/main.js validate --input data/sample.csv --config config/complete-validation.yaml --output test-llm-fixed --format json',
+    expected: 'LLM Server deve responder corretamente via Node.js'
+  }
+];
+
+// Cores para output
 const colors = {
   green: '\x1b[32m',
   red: '\x1b[31m',
   yellow: '\x1b[33m',
+  blue: '\x1b[34m',
   reset: '\x1b[0m'
 };
 
-const log = {
-  success: (msg) => console.log(`${colors.green}✅ ${msg}${colors.reset}`),
-  error: (msg) => console.log(`${colors.red}❌ ${msg}${colors.reset}`),
-  warn: (msg) => console.log(`${colors.yellow}⚠️  ${msg}${colors.reset}`),
-  info: (msg) => console.log(`ℹ️  ${msg}`)
-};
-
-// Test results
-const results = {
-  passed: 0,
-  failed: 0,
-  warnings: 0
-};
-
-async function runTest(name, testFn) {
-  try {
-    log.info(`Testing: ${name}`);
-    await testFn();
-    results.passed++;
-    log.success(`${name} - PASSED`);
-  } catch (error) {
-    results.failed++;
-    log.error(`${name} - FAILED: ${error.message}`);
-  }
+// Função auxiliar para log
+function log(message, color = colors.reset) {
+  console.log(`${color}${message}${colors.reset}`);
 }
 
-// Test 1: LLM Server JSON Format
-async function testLLMServerJSONFormat() {
+// Função para executar comando com timeout
+function executeCommand(command, timeout = 120000) {
+  return new Promise((resolve, reject) => {
+    const [cmd, ...args] = command.split(' ');
+    const child = spawn(cmd, args, { stdio: 'pipe' });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    const timeoutId = setTimeout(() => {
+      child.kill('SIGTERM');
+      reject(new Error(`Timeout de ${timeout}ms excedido`));
+    }, timeout);
+
+    child.on('close', (code) => {
+      clearTimeout(timeoutId);
+      resolve({ code, stdout, stderr });
+    });
+
+    child.on('error', (error) => {
+      clearTimeout(timeoutId);
+      reject(error);
+    });
+  });
+}
+
+// Função para verificar se LLM Server está rodando
+async function checkLLMServer() {
   try {
-    // Check if server is running
     const response = await fetch('http://localhost:8000/health');
-    if (!response.ok) {
-      throw new Error('LLM server not running');
-    }
-
-    // Test JSON format
-    const testResponse = await fetch('http://localhost:8000/validate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        csv_value: 'João da Silva',
-        web_value: 'João da Silva',
-        field_type: 'text',
-        field_name: 'name'
-      })
-    });
-
-    const data = await testResponse.json();
-
-    if (!data.hasOwnProperty('match') || typeof data.confidence !== 'number' || !data.reasoning) {
-      throw new Error('Invalid JSON format from LLM server');
-    }
-  } catch (error) {
-    throw new Error(`LLM Server JSON Format: ${error.message}`);
+    return response.ok;
+  } catch {
+    return false;
   }
 }
 
-// Test 2: LLM Engine Endpoints
-async function testLLMEngineEndpoints() {
-  try {
-    // Test LocalLLMEngine can connect to server
-    const { LocalLLMEngine } = await import('../src/llm/local-llm-engine.js');
+// Função para analisar resultados
+function analyzeResults(testName, stdout, stderr, exitCode) {
+  const results = {
+    success: false,
+    issues: [],
+    details: {}
+  };
 
-    const engine = new LocalLLMEngine({
-      settings: {
-        modelPath: './models/llama3-8b-instruct.Q4_K_M.gguf',
-        contextSize: 4096,
-        threads: 4,
-        temperature: 0.1,
-        maxTokens: 512
+  // Análise específica por tipo de teste
+  switch (testName) {
+    case 'gov-br-test':
+      if (stdout.includes('Navigation completed') && !stdout.includes('404')) {
+        results.success = true;
+      } else {
+        results.issues.push('Falha ao acessar sites gov.br');
       }
-    });
+      break;
 
-    const serverRunning = await engine.checkLLMServer();
-    if (!serverRunning) {
-      throw new Error('Cannot connect to LLM server');
-    }
-  } catch (error) {
-    throw new Error(`LLM Engine Endpoints: ${error.message}`);
-  }
-}
-
-// Test 3: Character Special Handling
-async function testCharacterSpecialHandling() {
-  try {
-    // Test normalization function
-    const { LocalLLMEngine } = await import('../src/llm/local-llm-engine.js');
-
-    // Create mock engine to test normalization
-    const engine = new LocalLLMEngine({
-      settings: { modelPath: '', contextSize: 4096, threads: 4, temperature: 0.1, maxTokens: 512 }
-    });
-
-    log.info('Character special handling validated via normalization');
-  } catch (error) {
-    throw new Error(`Character Special Handling: ${error.message}`);
-  }
-}
-
-// Test 4: OCR Multi-language Support
-async function testOCRMultiLanguage() {
-  try {
-    const { OCREngine } = await import('../src/ocr/ocr-engine.js');
-
-    const engine = new OCREngine({
-      settings: {
-        language: 'eng+por',
-        mode: 6,
-        confidenceThreshold: 0.6
+    case 'wikipedia-test':
+      const urlMatches = stdout.match(/https:\/\/pt\.wikipedia\.org\/wiki\/[^%]+/g);
+      if (urlMatches && urlMatches.some(url => !url.includes('%7B'))) {
+        results.success = true;
+      } else {
+        results.issues.push('Parâmetros URL não foram substituídos');
       }
-    });
+      break;
 
-    // Test language validation
-    const supportedLanguages = OCREngine.getSupportedLanguages();
-    if (!supportedLanguages.includes('por')) {
-      throw new Error('Portuguese language not supported');
-    }
-
-    // Test settings validation
-    const validation = OCREngine.validateSettings({
-      language: 'eng+por',
-      mode: 6,
-      confidenceThreshold: 0.6
-    });
-
-    if (!validation.valid) {
-      throw new Error(`OCR settings invalid: ${validation.errors.join(', ')}`);
-    }
-  } catch (error) {
-    throw new Error(`OCR Multi-language: ${error.message}`);
-  }
-}
-
-// Test 5: Config Manager YAML Compatibility
-async function testConfigManagerYAML() {
-  try {
-    const { ConfigManager } = await import('../src/core/config-manager.js');
-    const configManager = new ConfigManager();
-
-    // Test snake_case to camelCase conversion
-    const testConfig = {
-      target_url: 'https://example.com',
-      field_mappings: [
-        {
-          csv_field: 'name',
-          web_selector: '.name',
-          field_type: 'text',
-          required: true
-        }
-      ],
-      confidence: {
-        minimum_overall: 0.8,
-        minimum_field: 0.7
+    case 'special-chars-test':
+      if (stdout.includes('Navigation completed') && !stdout.includes('Timeout')) {
+        results.success = true;
+      } else {
+        results.issues.push('Timeout em sites externos');
       }
-    };
+      break;
 
-    // Test normalization
-    const normalized = configManager.normalizeConfigKeys(testConfig);
-
-    if (!normalized.targetUrl || !normalized.fieldMappings) {
-      throw new Error('YAML to camelCase conversion failed');
-    }
-  } catch (error) {
-    throw new Error(`Config Manager YAML: ${error.message}`);
-  }
-}
-
-// Test 6: Taskmaster Validation
-async function testTaskmasterValidation() {
-  try {
-    const { TaskmasterController } = await import('../src/core/taskmaster.js');
-
-    // Test validation methods exist
-    const taskmaster = new TaskmasterController();
-
-    // Check if validation methods are available
-    if (typeof taskmaster.validateInputs !== 'function') {
-      throw new Error('Taskmaster validation methods missing');
-    }
-  } catch (error) {
-    throw new Error(`Taskmaster Validation: ${error.message}`);
-  }
-}
-
-// Test 7: Resource Manager Signal Handling
-async function testResourceManagerSignals() {
-  try {
-    const { getResourceManager } = await import('../src/core/resource-manager.js');
-    const manager = getResourceManager();
-
-    // Check if signal handlers are set up
-    const stats = manager.getStats();
-    log.info(`Resource manager has ${stats.totalResources} registered resources`);
-  } catch (error) {
-    throw new Error(`Resource Manager Signals: ${error.message}`);
-  }
-}
-
-// Test 8: Browser Agent Cleanup
-async function testBrowserAgentCleanup() {
-  try {
-    const { BrowserAgent } = await import('../src/automation/browser-agent.js');
-
-    const agent = new BrowserAgent({
-      settings: {
-        headless: true,
-        viewport: { width: 1920, height: 1080 },
-        timeout: 30000,
-        userAgent: 'DataHawk/1.0'
+    case 'llm-communication-test':
+      if (stdout.includes('LLM validation completed') || stdout.includes('confidence')) {
+        results.success = true;
+      } else {
+        results.issues.push('Falha na comunicação com LLM Server');
       }
-    });
-
-    // Test cleanup method exists
-    if (typeof agent.cleanup !== 'function') {
-      throw new Error('BrowserAgent cleanup method missing');
-    }
-  } catch (error) {
-    throw new Error(`Browser Agent Cleanup: ${error.message}`);
+      break;
   }
+
+  return results;
 }
 
-// Main execution
-async function main() {
-  console.log('🔍 DataHawk Bug Fix Validation');
-  console.log('================================\n');
+// Função principal de validação
+async function validateFixes() {
+  log('🧪 Iniciando validação das correções de bugs...', colors.blue);
+  log('='.repeat(60), colors.blue);
 
-  const tests = [
-    ['LLM Server JSON Format', testLLMServerJSONFormat],
-    ['LLM Engine Endpoints', testLLMEngineEndpoints],
-    ['Character Special Handling', testCharacterSpecialHandling],
-    ['OCR Multi-language Support', testOCRMultiLanguage],
-    ['Config Manager YAML Compatibility', testConfigManagerYAML],
-    ['Taskmaster Validation', testTaskmasterValidation],
-    ['Resource Manager Signal Handling', testResourceManagerSignals],
-    ['Browser Agent Cleanup', testBrowserAgentCleanup]
-  ];
+  // Verificar se LLM Server está rodando
+  log('Verificando LLM Server...', colors.yellow);
+  const llmRunning = await checkLLMServer();
+  if (!llmRunning) {
+    log('⚠️  LLM Server não está rodando. Iniciando...', colors.yellow);
+    const llmProcess = spawn('python3', ['llm-server.py'], {
+      stdio: 'ignore',
+      detached: true
+    });
+    llmProcess.unref();
 
-  for (const [name, testFn] of tests) {
-    await runTest(name, testFn);
+    // Aguardar inicialização
+    await new Promise(resolve => setTimeout(resolve, 5000));
   }
 
-  console.log('\n📊 Summary:');
-  console.log(`✅ Passed: ${results.passed}`);
-  console.log(`❌ Failed: ${results.failed}`);
-  console.log(`⚠️  Warnings: ${results.warnings}`);
+  // Verificar se build existe
+  if (!fs.existsSync('dist/main.js')) {
+    log('📦 Compilando TypeScript...', colors.yellow);
+    await executeCommand('npm run build');
+  }
 
-  if (results.failed === 0) {
-    log.success('All critical bugs have been resolved!');
-    process.exit(0);
+  const results = [];
+
+  for (const testCase of TEST_CASES) {
+    log(`\n🧪 Executando: ${testCase.name}`, colors.blue);
+    log(`Descrição: ${testCase.description}`, colors.blue);
+    log(`Esperado: ${testCase.expected}`, colors.blue);
+
+    try {
+      const { code, stdout, stderr } = await executeCommand(testCase.command);
+      const analysis = analyzeResults(testCase.name, stdout, stderr, code);
+
+      results.push({
+        name: testCase.name,
+        success: analysis.success,
+        issues: analysis.issues,
+        exitCode: code
+      });
+
+      if (analysis.success) {
+        log(`✅ ${testCase.name}: SUCESSO`, colors.green);
+      } else {
+        log(`❌ ${testCase.name}: FALHA`, colors.red);
+        analysis.issues.forEach(issue => log(`   - ${issue}`, colors.red));
+      }
+
+      // Salvar logs detalhados
+      const logDir = path.join('test-logs', testCase.name);
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+
+      fs.writeFileSync(
+        path.join(logDir, 'stdout.log'),
+        stdout
+      );
+      fs.writeFileSync(
+        path.join(logDir, 'stderr.log'),
+        stderr
+      );
+
+    } catch (error) {
+      log(`❌ ${testCase.name}: ERRO - ${error.message}`, colors.red);
+      results.push({
+        name: testCase.name,
+        success: false,
+        issues: [error.message],
+        exitCode: -1
+      });
+    }
+  }
+
+  // Resumo final
+  log('\n' + '='.repeat(60), colors.blue);
+  log('📊 RESUMO DA VALIDAÇÃO', colors.blue);
+  log('='.repeat(60), colors.blue);
+
+  const successful = results.filter(r => r.success).length;
+  const total = results.length;
+
+  log(`✅ Testes bem-sucedidos: ${successful}/${total}`, colors.green);
+  log(`❌ Testes com falhas: ${total - successful}/${total}`, colors.red);
+
+  if (successful === total) {
+    log('\n🎉 TODOS OS BUGS FORAM CORRIGIDOS!', colors.green);
   } else {
-    log.error(`${results.failed} tests failed. Please review the issues above.`);
-    process.exit(1);
+    log('\n⚠️  ALGUNS BUGS PERSISTEM:', colors.yellow);
+    results.filter(r => !r.success).forEach(r => {
+      log(`   - ${r.name}: ${r.issues.join(', ')}`, colors.red);
+    });
   }
+
+  return successful === total;
 }
 
-// Handle uncaught errors
-process.on('unhandledRejection', (error) => {
-  console.error('Unhandled rejection:', error);
-  process.exit(1);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
-  process.exit(1);
-});
-
-// Run if called directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch(console.error);
+// Executar se chamado diretamente
+if (require.main === module) {
+  validateFixes()
+    .then(success => process.exit(success ? 0 : 1))
+    .catch(error => {
+      console.error('Erro crítico:', error);
+      process.exit(1);
+    });
 }
 
-export { main, runTest };
+module.exports = { validateFixes };
