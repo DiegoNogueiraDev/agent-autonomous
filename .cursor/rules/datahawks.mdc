@@ -1,0 +1,321 @@
+---
+description: Regras de desenvolvimento DataHawks - Clean Code, Refatoração e Qualidade
+globs: ["**/*.ts", "**/*.js", "**/*.json", "**/*.yaml", "**/*.yml"]
+alwaysApply: true
+---
+
+# 🦅 DataHawks Development Rules
+
+## 🎯 Princípios Fundamentais
+
+### **1. Clean Code First**
+- **Nomes descritivos**: Variáveis, funções e classes devem expressar intenção
+- **Funções pequenas**: Máximo 20 linhas, idealmente 10
+- **Classes coesas**: Máximo 600 linhas, refatorar quando atingir 400
+- **DRY (Don't Repeat Yourself)**: Reaproveitar código via composição e herança
+
+### **2. TypeScript Strict Mode**
+```typescript
+// ✅ BOM
+interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  metadata?: Record<string, unknown>;
+}
+
+// ❌ RUIM
+type Result = any;
+```
+
+### **3. Refatoração Automática**
+- **Trigger**: Arquivo > 600 linhas
+- **Ação**: Sugerir extração de módulos
+- **Critérios**: 
+  - Identificar responsabilidades únicas
+  - Criar interfaces claras
+  - Manter testes passando
+
+## 🏗️ Arquitetura & Patterns
+
+### **Clean Architecture Layers**
+```
+┌─────────────────┐
+│   Controllers   │ ← Handlers HTTP/API
+├─────────────────┤
+│    Use Cases    │ ← Lógica de negócio
+├─────────────────┤
+│   Repositories  │ ← Acesso a dados
+├─────────────────┤
+│     Entities    │ ← Modelos de domínio
+└─────────────────┘
+```
+
+### **Design Patterns Obrigatórios**
+- **Factory**: Para criação de objetos complexos
+- **Strategy**: Para algoritmos intercambiáveis
+- **Observer**: Para eventos e logs
+- **Repository**: Para acesso a dados
+
+## 🧪 Qualidade & Testes
+
+### **TDD Cycle**
+1. **Red**: Escrever teste falhando
+2. **Green**: Implementar código mínimo
+3. **Refactor**: Melhorar sem quebrar
+
+### **Cobertura Mínima**
+- **Unit Tests**: 90% cobertura
+- **Integration**: Todos os fluxos críticos
+- **E2E**: Cenários principais
+
+### **Test Structure**
+```typescript
+describe('FeatureName', () => {
+  describe('when condition', () => {
+    it('should expected behavior', () => {
+      // Arrange
+      // Act
+      // Assert
+    });
+  });
+});
+```
+
+## 🔍 Code Review Rules
+
+### **PR Checklist Automático**
+- [ ] Código segue padrões de nomenclatura
+- [ ] Testes cobrem novas funcionalidades
+- [ ] Documentação atualizada
+- [ ] Sem warnings do TypeScript
+- [ ] Complexidade ciclomática < 10
+- [ ] Duplicação < 3%
+
+### **Severidade de Issues**
+- **CRITICAL**: Falha de segurança ou quebra de contrato
+- **HIGH**: Performance ou manutenibilidade comprometida
+- **MEDIUM**: Violação de padrões mas funcional
+- **LOW**: Estilo ou melhorias cosméticas
+
+## 🔄 Refatoração Guidelines
+
+### **Quando Refatorar**
+1. **Tamanho**: Arquivo > 600 linhas
+2. **Complexidade**: Função > 20 linhas ou > 4 níveis de aninhamento
+3. **Duplicação**: Código repetido > 2 vezes
+4. **Acoplamento**: Mais de 3 dependências diretas
+
+### **Processo de Refatoração**
+```typescript
+// Passo 1: Identificar smells
+class LargeClass { /* 800+ lines */ }
+
+// Passo 2: Extrair responsabilidades
+class ValidationService { }
+class DataProcessor { }
+class ReportGenerator { }
+
+// Passo 3: Criar interfaces
+interface IValidator {
+  validate(data: unknown): ValidationResult;
+}
+```
+
+### **Safe Refactoring**
+1. **Criar testes** antes de alterar
+2. **Refatorar em pequenos passos**
+3. **Rodar testes** após cada mudança
+4. **Commit granular** com mensagens claras
+
+## 📊 Métricas de Qualidade
+
+### **Métricas Monitoradas**
+- **Lines of Code**: Máximo 600 por arquivo
+- **Cyclomatic Complexity**: Máximo 10 por função
+- **Test Coverage**: Mínimo 90%
+- **Duplication**: Máximo 3%
+- **Technical Debt**: Monitorado via SonarQube
+
+### **Alertas Automáticos**
+```json
+{
+  "file_size_warning": "> 400 lines",
+  "file_size_error": "> 600 lines",
+  "complexity_warning": "> 8",
+  "complexity_error": "> 10",
+  "coverage_warning": "< 85%",
+  "coverage_error": "< 90%"
+}
+```
+
+## 🎨 Estilo de Código
+
+### **TypeScript Style Guide**
+```typescript
+// ✅ Nomenclatura
+const MAX_RETRY_ATTEMPTS = 3;
+const userRepository: IUserRepository;
+const calculateTotalPrice = (items: Item[]): number => { };
+
+// ✅ Interfaces prefixadas
+interface IValidationService { }
+interface IBrowserAgent { }
+
+// ✅ Enums descritivos
+enum ValidationStatus {
+  PENDING = 'PENDING',
+  VALID = 'VALID',
+  INVALID = 'INVALID'
+}
+```
+
+### **Organização de Arquivos**
+```
+src/
+├── feature-name/
+│   ├── index.ts           # Public API
+│   ├── feature.service.ts # Lógica de negócio
+│   ├── feature.dto.ts     # Data transfer objects
+│   ├── feature.test.ts    # Testes unitários
+│   └── types.ts          # Tipos específicos
+```
+
+## 🚀 Performance Guidelines
+
+### **Otimizações Automáticas**
+- **Lazy loading** para módulos grandes
+- **Memoization** para funções puras
+- **Connection pooling** para recursos externos
+- **Caching** com TTL apropriado
+
+### **Anti-patterns Proibidos**
+```typescript
+// ❌ Nesting profundo
+if (condition1) {
+  if (condition2) {
+    if (condition3) {
+      // ... 4+ níveis
+    }
+  }
+}
+
+// ✅ Early returns
+if (!condition1) return;
+if (!condition2) return;
+// Lógica principal
+```
+
+## 📝 Documentação
+
+### **JSDoc Obrigatório**
+```typescript
+/**
+ * Valida dados CSV contra interface web
+ * @param config - Configuração de validação
+ * @returns Resultado com evidências e relatórios
+ * @throws {ValidationError} Quando configuração é inválida
+ * @example
+ * ```typescript
+ * const result = await validateData({
+ *   input: 'data.csv',
+ *   urlTemplate: 'https://example.com/{id}'
+ * });
+ * ```
+ */
+async function validateData(config: ValidationConfig): Promise<ValidationResult> { }
+```
+
+### **README.md por Módulo**
+Cada módulo deve conter:
+- Propósito e responsabilidade
+- Como usar (exemplos)
+- Dependências
+- Como testar
+
+## 🔧 Ferramentas & Integração
+
+### **Cursor Commands**
+```bash
+# Refatoração automática
+cursor:refactor # Analisa e sugere refatorações
+cursor:test     # Gera testes para código novo
+cursor:docs     # Atualiza documentação
+
+# Qualidade
+cursor:lint     # Executa linting completo
+cursor:analyze  # Análise de complexidade
+cursor:coverage # Relatório de cobertura
+```
+
+### **VSCode Tasks**
+```json
+{
+  "label": "quality-check",
+  "type": "npm",
+  "script": "quality:check",
+  "problemMatcher": ["$tsc", "$eslint"]
+}
+```
+
+## 🎯 Comandos de Qualidade
+
+### **Pre-commit Hooks**
+```bash
+# Executa automaticamente
+npm run lint:fix          # ESLint auto-fix
+npm run test:staged       # Testes afetados
+npm run type-check        # TypeScript strict
+npm run complexity:check  # Análise de complexidade
+```
+
+### **CI/CD Gates**
+- **Build**: Deve compilar sem erros
+- **Tests**: Todos passando com 90%+ cobertura
+- **Lint**: Zero warnings
+- **Security**: Scan sem vulnerabilidades
+- **Performance**: Sem regressões > 5%
+
+## 🚨 Erros Comuns & Soluções
+
+### **TypeScript Errors**
+```typescript
+// ❌ Any types
+const data: any = getData();
+
+// ✅ Type safety
+const data = getData() as ValidationResult;
+```
+
+### **Memory Leaks**
+```typescript
+// ❌ Sem cleanup
+class BrowserAgent {
+  private browser: Browser;
+}
+
+// ✅ Cleanup apropriado
+class BrowserAgent {
+  private browser: Browser;
+  
+  async dispose(): Promise<void> {
+    await this.browser?.close();
+  }
+}
+```
+
+## 🔄 Continuous Improvement
+
+### **Sprint Retrospectiva**
+- Revisar métricas de qualidade
+- Identificar padrões problemáticos
+- Atualizar estas regras
+- Compartilhar aprendizados
+
+### **Knowledge Base**
+- Padrões comuns documentados
+- Soluções para problemas recorrentes
+- Exemplos de refatoração bem-sucedida
+
+---
+
+**💡 Lembre-se**: Estas regras evoluem com o projeto. Proponha melhorias via PR quando identificar oportunidades.
