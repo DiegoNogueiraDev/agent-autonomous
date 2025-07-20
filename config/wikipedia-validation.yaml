@@ -1,6 +1,6 @@
-targetUrl: 'https://pt.wikipedia.org/wiki/{titulo}'
+targetUrl: 'https://pt.wikipedia.org/wiki/{articleName}'
 fieldMappings:
-  - csvField: 'titulo'
+  - csvField: 'title'
     webSelector: 'h1#firstHeading'
     fieldType: 'text'
     required: true

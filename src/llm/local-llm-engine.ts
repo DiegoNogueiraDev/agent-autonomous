@@ -196,45 +196,101 @@ export class LocalLLMEngine {
       },
 
       validateSpecific: async (request: ValidationDecisionRequest) => {
-        try {
-          // Use dedicated /validate endpoint
-          const response = await fetch(`${baseUrl}/validate`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            body: JSON.stringify({
+        const maxRetries = 3;
+        let lastError: Error | null = null;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            const url = `${baseUrl}/validate`;
+            const payload = {
               csv_value: request.csvValue,
               web_value: request.webValue,
               field_type: request.fieldType,
               field_name: request.fieldName
-            }),
-            signal: AbortSignal.timeout(30000) // 30 second timeout
-          });
+            };
+            
+            this.logger.debug('Making validation request', { url, payload, attempt });
+            
+            // Add a small delay between retries
+            if (attempt > 1) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            }
+            
+            // Check if server is still alive before making request
+            try {
+              const healthResponse = await fetch(`${baseUrl}/health`, {
+                method: 'GET',
+                signal: AbortSignal.timeout(5000)
+              });
+              if (!healthResponse.ok) {
+                throw new Error('Server health check failed');
+              }
+            } catch (healthError) {
+              throw new Error(`LLM server is not responding to health checks: ${healthError instanceof Error ? healthError.message : 'Unknown error'}`);
+            }
+            
+            // Use dedicated /validate endpoint
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: JSON.stringify(payload),
+              signal: AbortSignal.timeout(10000) // Reduced timeout to 10 seconds
+            });
 
-          if (!response.ok) {
-            throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+            if (!response.ok) {
+              throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json() as any;
+
+            // Ensure we have the expected format
+            return {
+              text: JSON.stringify({
+                match: Boolean(data.match),
+                confidence: Math.min(1.0, Math.max(0.0, parseFloat(data.confidence || 0.5))),
+                reasoning: String(data.reasoning || 'Validation completed')
+              }),
+              tokens: data.tokens || 0,
+              processing_time: data.processing_time || 0
+            };
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            
+            this.logger.warn(`Validation request failed (attempt ${attempt}/${maxRetries})`, { 
+              error: lastError.message,
+              url: `${baseUrl}/validate`,
+              attempt,
+              willRetry: attempt < maxRetries
+            });
+            
+            // If this was the last attempt, break and throw
+            if (attempt === maxRetries) {
+              break;
+            }
+            
+            // Continue to next retry
           }
-
-          const data = await response.json() as any;
-
-          // Ensure we have the expected format
-          return {
-            text: JSON.stringify({
-              match: Boolean(data.match),
-              confidence: Math.min(1.0, Math.max(0.0, parseFloat(data.confidence || 0.5))),
-              reasoning: String(data.reasoning || 'Validation completed')
-            }),
-            tokens: data.tokens || 0,
-            processing_time: data.processing_time || 0
-          };
-        } catch (error) {
-          if (error instanceof Error && error.name === 'AbortError') {
-            throw new Error('LLM validation request timed out');
-          }
-          throw new Error(`LLM validation request failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
+        
+        // All retries failed
+        this.logger.error('All validation request attempts failed', { 
+          error: lastError?.message,
+          url: `${baseUrl}/validate`,
+          attempts: maxRetries
+        });
+        
+        if (lastError && lastError.name === 'AbortError') {
+          throw new Error('LLM validation request timed out after all retries');
+        }
+        
+        if (lastError && lastError.message.includes('fetch failed')) {
+          throw new Error(`LLM validation request failed: Unable to connect to server at ${baseUrl}/validate after ${maxRetries} attempts`);
+        }
+        
+        throw new Error(`LLM validation request failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`);
       }
     };
   }
