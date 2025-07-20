@@ -205,7 +205,7 @@ export class ConfigManager {
 
       return validatedConfig as ValidationConfig;
     } catch (error) {
-      if (error.code === 'ENOENT') {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
         throw new Error(`Configuration file not found: ${configPath}`);
       }
 
