@@ -1,0 +1,369 @@
+{
+  "id": "report_1752985043866",
+  "timestamp": "2025-07-20T04:17:23.866Z",
+  "summary": {
+    "totalRows": 5,
+    "processedRows": 5,
+    "successfulValidations": 5,
+    "failedValidations": 0,
+    "averageConfidence": 0,
+    "processingTime": 114315,
+    "errorRate": 0
+  },
+  "results": [
+    {
+      "rowId": "row_0",
+      "csvData": {
+        "searchterm": "heart",
+        "emojiname": "Red Heart",
+        "emojisymbol": "❤️",
+        "shortdescription": "A classic red love heart emoji",
+        "categorytext": "Approved as part of Unicode"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "emojiName": null,
+          "emojiSymbol": null,
+          "shortDescription": null,
+          "categoryText": null
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 30564,
+      "evidenceId": "ev_1752984960528_w6irss",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T04:16:00.528Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "row_1",
+      "csvData": {
+        "searchterm": "smile",
+        "emojiname": "Grinning Face",
+        "emojisymbol": "😀",
+        "shortdescription": "A classic smiley face with a big open smile",
+        "categorytext": "Approved as part of Unicode"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "emojiName": null,
+          "emojiSymbol": null,
+          "shortDescription": null,
+          "categoryText": null
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 30630,
+      "evidenceId": "ev_1752984991158_dicskq",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T04:16:31.158Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "row_2",
+      "csvData": {
+        "searchterm": "brazil",
+        "emojiname": "Flag: Brazil",
+        "emojisymbol": "🇧🇷",
+        "shortdescription": "The flag of Brazil",
+        "categorytext": "Flag"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "emojiName": null,
+          "emojiSymbol": null,
+          "shortDescription": null,
+          "categoryText": null
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 30579,
+      "evidenceId": "ev_1752985021737_02er0x",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T04:17:01.738Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "row_3",
+      "csvData": {
+        "searchterm": "thumbs-up",
+        "emojiname": "Thumbs Up",
+        "emojisymbol": "👍",
+        "shortdescription": "A thumbs-up gesture",
+        "categorytext": "Approved as part of Unicode"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "emojiName": null,
+          "emojiSymbol": null,
+          "shortDescription": null,
+          "categoryText": null
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 11638,
+      "evidenceId": "ev_1752985033376_aelh6v",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T04:17:13.376Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "row_4",
+      "csvData": {
+        "searchterm": "rainbow",
+        "emojiname": "Rainbow",
+        "emojisymbol": "🌈",
+        "shortdescription": "A colorful rainbow",
+        "categorytext": "Approved as part of Unicode\""
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "emojiName": null,
+          "emojiSymbol": null,
+          "shortDescription": null,
+          "categoryText": null
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 10365,
+      "evidenceId": "ev_1752985043742_8g400p",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T04:17:23.742Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    }
+  ],
+  "statistics": {
+    "confidenceDistribution": {
+      "high (0.9-1.0)": 0,
+      "medium (0.7-0.9)": 0,
+      "low (0.5-0.7)": 0,
+      "very_low (0-0.5)": 5
+    },
+    "extractionMethodUsage": {
+      "dom": 5,
+      "ocr": 0,
+      "fuzzy": 0,
+      "manual": 0
+    },
+    "fieldAccuracy": {},
+    "errorsByType": {},
+    "performanceMetrics": {
+      "avgTimePerRow": 22863,
+      "memoryUsagePeak": 108.04090881347656,
+      "cpuUtilizationAvg": 0,
+      "accuracyRate": 1,
+      "ocrFallbackRate": 0,
+      "errorRate": 0
+    }
+  },
+  "configuration": {
+    "targetUrl": "https://emojipedia.org/search?q={searchTerm}",
+    "fieldMappings": [
+      {
+        "csvField": "emojiName",
+        "webSelector": ".search-results ol li:first-child h2 a",
+        "fieldType": "text",
+        "required": true,
+        "validationStrategy": "dom_extraction"
+      },
+      {
+        "csvField": "emojiSymbol",
+        "webSelector": ".search-results ol li:first-child a.EmojiDetail-header > span.Emoji",
+        "fieldType": "text",
+        "required": true,
+        "validationStrategy": "dom_extraction"
+      },
+      {
+        "csvField": "shortDescription",
+        "webSelector": ".search-results ol li:first-child > a > div.ExtraInfo",
+        "fieldType": "text",
+        "required": false,
+        "validationStrategy": "dom_extraction"
+      },
+      {
+        "csvField": "categoryText",
+        "webSelector": ".search-results ol li:first-child .EmojiDetail-subdescription",
+        "fieldType": "text",
+        "required": false,
+        "validationStrategy": "dom_extraction"
+      }
+    ],
+    "validationRules": {
+      "confidence": {
+        "minimumOverall": 0.6,
+        "minimumField": 0.5,
+        "ocrThreshold": 0.5,
+        "fuzzyMatchThreshold": 0.7
+      },
+      "fuzzyMatching": {
+        "enabled": true,
+        "algorithms": [
+          "levenshtein",
+          "jaro_winkler"
+        ],
+        "stringSimilarityThreshold": 0.7,
+        "numberTolerance": 0.001,
+        "caseInsensitive": true,
+        "ignoreWhitespace": true
+      },
+      "normalization": {
+        "whitespace": {
+          "trimLeading": true,
+          "trimTrailing": true,
+          "normalizeInternal": true
+        },
+        "case": {
+          "email": "lowercase",
+          "name": "preserve",
+          "text": "preserve"
+        },
+        "specialCharacters": {
+          "removeAccents": false,
+          "normalizeQuotes": false,
+          "normalizeDashes": false
+        },
+        "numbers": {
+          "decimalSeparator": ".",
+          "thousandSeparator": ",",
+          "currencySymbolRemove": true
+        },
+        "dates": {
+          "targetFormat": "YYYY-MM-DD",
+          "inputFormats": [
+            "MM/DD/YYYY",
+            "DD/MM/YYYY",
+            "YYYY-MM-DD"
+          ]
+        }
+      },
+      "errorHandling": {
+        "maxRetryAttempts": 3,
+        "retryDelayMs": 2000,
+        "exponentialBackoff": true,
+        "criticalErrors": [
+          "navigation_timeout",
+          "page_not_found"
+        ],
+        "recoverableErrors": [
+          "element_not_found",
+          "ocr_low_confidence"
+        ],
+        "escalationThreshold": 0.3
+      }
+    },
+    "performance": {
+      "batchProcessing": true,
+      "batchSize": 3,
+      "parallelWorkers": 3,
+      "caching": {
+        "domSnapshots": true,
+        "ocrResults": true,
+        "validationDecisions": false,
+        "ttl": 3600
+      },
+      "timeouts": {
+        "navigation": 30000,
+        "domExtraction": 15000,
+        "ocrProcessing": 45000,
+        "validationDecision": 30000,
+        "evidenceCollection": 10000
+      }
+    },
+    "evidence": {
+      "retentionDays": 30,
+      "screenshotEnabled": true,
+      "domSnapshotEnabled": true,
+      "compressionEnabled": true,
+      "includeInReports": true
+    }
+  },
+  "metadata": {
+    "generatedBy": "DataHawk v1.0.0",
+    "version": "1.0.0",
+    "format": [
+      "json",
+      "html"
+    ],
+    "size": 0
+  }
+}

@@ -1,0 +1,91 @@
+targetUrl: 'https://www.gov.br/pt-br/servicos/{serviceCode}'
+fieldMappings:
+  - csvField: 'serviceName'
+    webSelector: 'h1.header-title'
+    fieldType: 'text'
+    required: true
+    validationStrategy: 'dom_extraction'
+  - csvField: 'serviceDescription'
+    webSelector: '.documentDescription'
+    fieldType: 'text'
+    required: true
+    validationStrategy: 'dom_extraction'
+  - csvField: 'serviceCategory'
+    webSelector: '.content-core .linha.linha-destaque:first-of-type'
+    fieldType: 'text'
+    required: false
+    validationStrategy: 'dom_extraction'
+  - csvField: 'audience'
+    webSelector: '.content-core .linha.linha-destaque:nth-of-type(2)'
+    fieldType: 'text'
+    required: false
+    validationStrategy: 'dom_extraction'
+  - csvField: 'departmentResponsible'
+    webSelector: '.content-core .linha.linha-destaque:nth-of-type(3)'
+    fieldType: 'text'
+    required: false
+    validationStrategy: 'dom_extraction'
+
+validationRules:
+  confidence:
+    minimumOverall: 0.7
+    minimumField: 0.6
+    ocrThreshold: 0.6
+    fuzzyMatchThreshold: 0.8
+  fuzzyMatching:
+    enabled: true
+    algorithms: ['levenshtein', 'jaro_winkler']
+    stringSimilarityThreshold: 0.75
+    numberTolerance: 0.001
+    caseInsensitive: true
+    ignoreWhitespace: true
+  normalization:
+    whitespace:
+      trimLeading: true
+      trimTrailing: true
+      normalizeInternal: true
+    case:
+      email: 'lowercase'
+      name: 'preserve'
+      text: 'preserve'
+    specialCharacters:
+      removeAccents: false
+      normalizeQuotes: true
+      normalizeDashes: true
+    numbers:
+      decimalSeparator: '.'
+      thousandSeparator: ','
+      currencySymbolRemove: true
+    dates:
+      targetFormat: 'YYYY-MM-DD'
+      inputFormats: ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD']
+  errorHandling:
+    maxRetryAttempts: 3
+    retryDelayMs: 2000
+    exponentialBackoff: true
+    criticalErrors: ['navigation_timeout', 'page_not_found']
+    recoverableErrors: ['element_not_found', 'ocr_low_confidence']
+    escalationThreshold: 0.2
+
+performance:
+  batchProcessing: true
+  batchSize: 5
+  parallelWorkers: 2
+  caching:
+    domSnapshots: true
+    ocrResults: true
+    validationDecisions: false
+    ttl: 3600
+  timeouts:
+    navigation: 40000 # Aumentado para sites governamentais que podem ser mais lentos
+    domExtraction: 20000
+    ocrProcessing: 45000
+    validationDecision: 30000
+    evidenceCollection: 15000
+
+evidence:
+  retentionDays: 30
+  screenshotEnabled: true
+  domSnapshotEnabled: true
+  compressionEnabled: true
+  includeInReports: true 

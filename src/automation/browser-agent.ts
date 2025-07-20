@@ -562,16 +562,11 @@ export class BrowserAgent implements ManagedResource {
    */
   private interpolateUrl(url: string, rowData?: CSVRow): string {
     if (!rowData) return url;
-
-    let interpolatedUrl = url;
     
-    // Replace {field} patterns with row data
-    for (const [key, value] of Object.entries(rowData)) {
-      const pattern = new RegExp(`\\{${key}\\}`, 'g');
-      interpolatedUrl = interpolatedUrl.replace(pattern, String(value));
-    }
-
-    return interpolatedUrl;
+    return url.replace(/{([^}]+)}/g, (match, key) => {
+      const normalizedKey = key.toLowerCase();
+      return rowData[normalizedKey] !== undefined ? encodeURIComponent(String(rowData[normalizedKey])) : match;
+    });
   }
 
   /**
