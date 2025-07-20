@@ -39,6 +39,9 @@ export class CSVLoader {
     trimHeaders: true,
     encoding: 'utf-8'
   };
+  
+  // Maximum file size: 10MB
+  private static readonly MAX_FILE_SIZE = 10 * 1024 * 1024;
 
   /**
    * Detect the delimiter used in a CSV sample
@@ -82,12 +85,83 @@ export class CSVLoader {
   }
 
   /**
+   * Validate CSV file before processing
+   */
+  async validateCsvFile(filePath: string): Promise<{ valid: boolean; errors: string[] }> {
+    const errors: string[] = [];
+    
+    try {
+      // Check file stats
+      const fileStats = await stat(filePath);
+      
+      // Validate file size
+      if (fileStats.size > CSVLoader.MAX_FILE_SIZE) {
+        errors.push(`File too large: ${Math.round(fileStats.size / 1024 / 1024)}MB (max 10MB)`);
+      }
+      
+      if (fileStats.size === 0) {
+        errors.push('File is empty');
+        return { valid: false, errors };
+      }
+      
+      // Read sample to validate structure
+      const sampleSize = Math.min(fileStats.size, 4096); // Read first 4KB
+      const fileHandle = await readFile(filePath, { encoding: 'utf-8' });
+      const sample = fileHandle.substring(0, sampleSize);
+      
+      // Check for basic CSV structure
+      const lines = sample.split('\n').filter(line => line.trim().length > 0);
+      
+      if (lines.length === 0) {
+        errors.push('No valid lines found in file');
+        return { valid: false, errors };
+      }
+      
+      // Detect delimiter and validate consistency
+      const delimiter = this.detectDelimiter(sample);
+      const firstLineColumns = lines[0].split(delimiter).length;
+      
+      if (firstLineColumns < 2) {
+        errors.push('File appears to have only one column - invalid CSV structure');
+      }
+      
+      // Check consistency across first few lines
+      const sampleLines = lines.slice(0, Math.min(5, lines.length));
+      const columnCounts = sampleLines.map(line => line.split(delimiter).length);
+      const isConsistent = columnCounts.every(count => count === columnCounts[0]);
+      
+      if (!isConsistent) {
+        errors.push(`Inconsistent number of columns detected: ${columnCounts.join(', ')}`);
+      }
+      
+      // Validate encoding
+      if (sample.includes('\uFFFD')) {
+        errors.push('File appears to have encoding issues');
+      }
+      
+    } catch (error) {
+      errors.push(`Error validating file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+    
+    return {
+      valid: errors.length === 0,
+      errors
+    };
+  }
+  
+  /**
    * Load and parse CSV file
    */
   async load(filePath: string, config?: CSVConfig): Promise<CSVData> {
     const mergedConfig = { ...this.defaultConfig, ...config };
     
     try {
+      // Validate file first
+      const validation = await this.validateCsvFile(filePath);
+      if (!validation.valid) {
+        throw new Error(`CSV validation failed: ${validation.errors.join(', ')}`);
+      }
+      
       // Read file and get metadata
       const [fileContent, fileStats] = await Promise.all([
         readFile(filePath, mergedConfig.encoding),
@@ -132,6 +206,21 @@ export class CSVLoader {
 
       // Extract headers
       const headers = rows.length > 0 ? Object.keys(rows[0] || {}) : [];
+      
+      // Additional validation after parsing
+      if (headers.length === 0) {
+        throw new Error('No headers found in CSV file');
+      }
+      
+      if (rows.length === 0) {
+        throw new Error('No data rows found in CSV file');
+      }
+      
+      // Check for duplicate headers
+      const duplicateHeaders = headers.filter((header, index) => headers.indexOf(header) !== index);
+      if (duplicateHeaders.length > 0) {
+        throw new Error(`Duplicate headers found: ${duplicateHeaders.join(', ')}`);
+      }
 
       // Create metadata
       const metadata: CSVMetadata = {

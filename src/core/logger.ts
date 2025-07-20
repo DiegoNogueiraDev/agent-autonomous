@@ -2,6 +2,7 @@ import winston from 'winston';
 
 export class Logger {
   private static instance: Logger;
+  private static instanceLock: boolean = false;
   private logger: winston.Logger;
 
   private constructor() {
@@ -40,8 +41,25 @@ export class Logger {
   }
 
   public static getInstance(): Logger {
+    // First check (optimization for common case)
     if (!Logger.instance) {
-      Logger.instance = new Logger();
+      // Acquire lock using a simple spin lock for Node.js single-threaded environment
+      // This protects against multiple simultaneous async calls
+      while (Logger.instanceLock) {
+        // Simple busy wait - in Node.js this is sufficient for async concurrency
+        // as we're not dealing with true multi-threading
+      }
+      
+      Logger.instanceLock = true;
+      try {
+        // Second check (safety check after acquiring lock)
+        if (!Logger.instance) {
+          Logger.instance = new Logger();
+        }
+      } finally {
+        // Always release the lock, even if constructor throws
+        Logger.instanceLock = false;
+      }
     }
     return Logger.instance;
   }

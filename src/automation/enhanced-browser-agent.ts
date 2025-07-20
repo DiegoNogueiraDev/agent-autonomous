@@ -1,6 +1,7 @@
 import { chromium, Browser, BrowserContext, Page, ElementHandle } from 'playwright';
 import { Logger } from '../core/logger.js';
 import { OCREngine } from '../ocr/ocr-engine.js';
+import { ManagedResource, registerResource } from '../core/resource-manager.js';
 import type { 
   BrowserSettings, 
   NavigationResult, 
@@ -27,7 +28,7 @@ export interface EnhancedBrowserAgentOptions {
  * Enhanced Browser Agent with OCR fallback capability
  * Extends original BrowserAgent with intelligent OCR integration
  */
-export class EnhancedBrowserAgent {
+export class EnhancedBrowserAgent implements ManagedResource {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
@@ -35,12 +36,18 @@ export class EnhancedBrowserAgent {
   private settings: BrowserSettings;
   private ocrEngine: OCREngine;
   private enableOCRFallback: boolean;
+  private resourceId: string;
+  private isCleanedUpFlag: boolean = false;
 
   constructor(options: EnhancedBrowserAgentOptions) {
     this.logger = Logger.getInstance();
     this.settings = options.settings;
     this.enableOCRFallback = options.enableOCRFallback ?? true;
     this.ocrEngine = new OCREngine({ settings: options.ocrSettings });
+    this.resourceId = `enhanced-browser-agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Register this instance for automatic cleanup
+    registerResource(this.resourceId, this);
   }
 
   /**
@@ -683,10 +690,16 @@ export class EnhancedBrowserAgent {
   }
 
   /**
-   * Clean up resources including OCR engine
+   * Implementation of ManagedResource interface
    */
-  async close(): Promise<void> {
+  async cleanup(): Promise<void> {
+    if (this.isCleanedUpFlag) {
+      return;
+    }
+
     try {
+      this.logger.debug('Starting enhanced browser agent cleanup', { resourceId: this.resourceId });
+      
       // Close OCR engine first
       if (this.enableOCRFallback) {
         await this.ocrEngine.cleanup();
@@ -708,11 +721,27 @@ export class EnhancedBrowserAgent {
         this.browser = null;
       }
 
-      this.logger.debug('Enhanced browser agent closed successfully');
+      this.isCleanedUpFlag = true;
+      this.logger.debug('Enhanced browser agent cleanup completed successfully', { resourceId: this.resourceId });
 
     } catch (error) {
-      this.logger.error('Error closing enhanced browser agent', error);
+      this.logger.error('Error during enhanced browser agent cleanup', { resourceId: this.resourceId, error });
+      throw error;
     }
+  }
+
+  /**
+   * Implementation of ManagedResource interface
+   */
+  isCleanedUp(): boolean {
+    return this.isCleanedUpFlag;
+  }
+
+  /**
+   * Clean up resources including OCR engine (public alias for cleanup)
+   */
+  async close(): Promise<void> {
+    await this.cleanup();
   }
 
   /**

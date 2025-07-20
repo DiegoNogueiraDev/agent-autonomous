@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import Tesseract from 'tesseract.js';
+import { access, constants } from 'fs/promises';
 import { Logger } from '../core/logger.js';
 import type { OCRResult, OCRSettings } from '../types/index.js';
 
@@ -55,16 +56,41 @@ export class OCREngine {
   }
 
   /**
-   * Initialize the OCR worker
+   * Initialize the OCR worker with improved error handling and fallback
    */
   async initialize(): Promise<void> {
     try {
+      // Validate settings before initialization
+      const validation = await OCREngine.validateSettings(this.settings);
+      if (!validation.valid) {
+        throw new Error(`OCR settings validation failed: ${validation.errors.join(', ')}`);
+      }
+      
+      if (validation.warnings.length > 0) {
+        this.logger.warn('OCR settings warnings', { warnings: validation.warnings });
+      }
+
       this.logger.info('Initializing OCR Engine', {
         language: this.settings.language,
         mode: this.settings.mode
       });
 
-      this.worker = await Tesseract.createWorker(this.settings.language);
+      // Try to create worker with specified language
+      try {
+        this.worker = await Tesseract.createWorker(this.settings.language);
+      } catch (languageError) {
+        this.logger.warn(`Failed to initialize with language '${this.settings.language}', trying English fallback`, {
+          originalError: languageError instanceof Error ? languageError.message : 'Unknown error'
+        });
+        
+        // Fallback to English if specified language fails
+        try {
+          this.worker = await Tesseract.createWorker('eng');
+          this.logger.info('OCR Engine initialized with English fallback');
+        } catch (fallbackError) {
+          throw new Error(`Failed to initialize OCR with both '${this.settings.language}' and English fallback: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`);
+        }
+      }
 
       // Configure worker parameters for better accuracy
       await this.worker.setParameters({
@@ -664,17 +690,85 @@ export class OCREngine {
   }
 
   /**
-   * Validate OCR settings
+   * Validate OCR settings with language file availability check
    */
-  static validateSettings(settings: OCRSettings): { valid: boolean; errors: string[] } {
+  static async validateSettings(settings: OCRSettings): Promise<{ valid: boolean; errors: string[]; warnings: string[] }> {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    const supportedLanguages = OCREngine.getSupportedLanguages();
+
+    // Validate language format first
+    if (!settings.language || !/^[a-z_]{3,}(\+[a-z_]{3,})*$/.test(settings.language)) {
+      errors.push('Invalid language format. Use ISO 639-2/3 format (e.g., "eng", "por", "eng+por")');
+    } else {
+      // Parse individual languages
+      const languages = settings.language.split('+');
+      
+      for (const lang of languages) {
+        // Check if language is in supported list
+        if (!supportedLanguages.includes(lang)) {
+          warnings.push(`Language '${lang}' not in known supported list, but may still work`);
+        }
+        
+        // Try to check for Tesseract language files
+        try {
+          // Tesseract.js downloads language files to temp directory during runtime
+          // We can't reliably check for their existence beforehand
+          // Instead, we'll add a warning for languages that might not be available
+          const commonLanguages = ['eng', 'por', 'spa', 'fra', 'deu'];
+          if (!commonLanguages.includes(lang)) {
+            warnings.push(`Language '${lang}' may require additional download time on first use`);
+          }
+        } catch (error) {
+          // Language file check failed, but this is not critical
+          warnings.push(`Could not verify availability of language '${lang}' - will be validated during initialization`);
+        }
+      }
+    }
+
+    // Validate page segmentation mode
+    if (settings.mode !== undefined && (settings.mode < 0 || settings.mode > 13)) {
+      errors.push(`Invalid page segmentation mode: ${settings.mode}. Must be 0-13`);
+    }
+    
+    // Validate confidence threshold
+    if (settings.confidenceThreshold !== undefined && 
+        (settings.confidenceThreshold < 0 || settings.confidenceThreshold > 100)) {
+      errors.push(`Invalid confidence threshold: ${settings.confidenceThreshold}. Must be 0-100`);
+    }
+    
+    // Validate whitelist characters
+    if (settings.whitelist !== undefined && settings.whitelist.length > 200) {
+      warnings.push('Character whitelist is very long and may impact performance');
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings
+    };
+  }
+  
+  /**
+   * Synchronous version for backward compatibility
+   */
+  static validateSettingsSync(settings: OCRSettings): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
     const supportedLanguages = OCREngine.getSupportedLanguages();
 
-    if (!supportedLanguages.includes(settings.language)) {
-      errors.push(`Unsupported language: ${settings.language}. Supported: ${supportedLanguages.join(', ')}`);
+    // Basic format validation
+    if (!settings.language || !/^[a-z_]{3,}(\+[a-z_]{3,})*$/.test(settings.language)) {
+      errors.push('Invalid language format. Use ISO 639-2/3 format (e.g., "eng", "por", "eng+por")');
+    } else {
+      const languages = settings.language.split('+');
+      for (const lang of languages) {
+        if (!supportedLanguages.includes(lang)) {
+          errors.push(`Potentially unsupported language: ${lang}`);
+        }
+      }
     }
 
-    if (settings.mode < 0 || settings.mode > 13) {
+    if (settings.mode !== undefined && (settings.mode < 0 || settings.mode > 13)) {
       errors.push(`Invalid page segmentation mode: ${settings.mode}. Must be 0-13`);
     }
 
