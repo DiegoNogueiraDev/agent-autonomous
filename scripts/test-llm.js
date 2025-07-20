@@ -5,7 +5,7 @@
  * This script tests the LLM engine without Jest dependencies
  */
 
-import { LocalLLMEngine } from './dist/llm/local-llm-engine.js';
+import { LocalLLMEngine } from '../dist/llm/local-llm-engine.js';
 
 async function runLLMTest() {
   console.log('🧪 Testing LocalLLMEngine...\n');
