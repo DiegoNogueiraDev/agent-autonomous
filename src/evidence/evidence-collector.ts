@@ -25,6 +25,7 @@ export class EvidenceCollector {
   private settings: EvidenceSettings;
   private baseOutputPath: string;
   private evidenceCount: number = 0;
+  private initialized: boolean = false;
 
   constructor(options: EvidenceCollectorOptions) {
     this.logger = Logger.getInstance();
@@ -44,6 +45,7 @@ export class EvidenceCollector {
       await mkdir(join(this.baseOutputPath, 'data'), { recursive: true });
       await mkdir(join(this.baseOutputPath, 'logs'), { recursive: true });
 
+      this.initialized = true;
       this.logger.info('Evidence collector initialized', {
         basePath: this.baseOutputPath,
         screenshotsEnabled: this.settings.screenshotEnabled,
@@ -54,6 +56,13 @@ export class EvidenceCollector {
       this.logger.error('Failed to initialize evidence collector', error);
       throw error;
     }
+  }
+
+  /**
+   * Check if evidence collector is initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized;
   }
 
   /**

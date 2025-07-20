@@ -121,7 +121,8 @@ export class EnhancedBrowserAgent {
         loadTime,
         redirectCount: 0,
         finalUrl: this.page.url(),
-        error: null
+        errors: [],
+        redirects: []
       };
 
       this.logger.info('Navigation completed', {
@@ -144,7 +145,8 @@ export class EnhancedBrowserAgent {
         loadTime,
         redirectCount: 0,
         finalUrl: targetUrl,
-        error: error instanceof Error ? error.message : String(error)
+        errors: [error instanceof Error ? error.message : String(error)],
+        redirects: []
       };
     }
   }

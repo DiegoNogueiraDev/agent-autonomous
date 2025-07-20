@@ -17,7 +17,10 @@ import type {
   LLMSettings,
   EvidenceSettings,
   CrewConfig,
-  OCRSettings
+  OCRSettings,
+  FieldValidation,
+  ExtractedWebData,
+  ExtractionMethod
 } from '../types/index.js';
 
 export interface TaskmasterOptions {
@@ -170,9 +173,9 @@ export class TaskmasterController {
 
             const fieldValidations: FieldValidation[] = Array.isArray(validations) ? validations.map((v: any) => ({
               field: config.fieldMappings.find(m => m.csvField in csvRow)?.csvField || 'unknown',
-              csvValue: csvRow[v.field] || null,
+              csvValue: (csvRow as any)[v.field] || null,
               webValue: v.webValue || null,
-              normalizedCsvValue: csvRow[v.field] || null,
+              normalizedCsvValue: (csvRow as any)[v.field] || null,
               normalizedWebValue: v.webValue || null,
               match: v.match || false,
               confidence: v.confidence || 0,
@@ -207,13 +210,13 @@ export class TaskmasterController {
             results.push(validationResult);
 
             // Calculate metrics
-            const avgConfidence = validationResult.validations?.length > 0
-              ? validationResult.validations.reduce((sum, v) => sum + v.confidence, 0) / validationResult.validations.length
+            const avgConfidence = (validationResult.validations?.length || 0) > 0
+              ? (validationResult.validations || []).reduce((sum, v) => sum + v.confidence, 0) / (validationResult.validations || []).length
               : 0;
 
             totalConfidence += avgConfidence;
             
-            if (validationResult.validations?.some(v => v.match)) {
+            if ((validationResult.validations || []).some(v => v.match)) {
               successfulValidations++;
             }
           } else {
@@ -265,13 +268,39 @@ export class TaskmasterController {
           this.logger.error('Row validation failed', { rowIndex: i, error });
           
           const errorResult: ValidationResult = {
+            rowId: `row-${i}`,
             rowIndex: i,
             csvData: csvRow,
-            webData: {},
+            webData: {
+              domData: {},
+              ocrData: {},
+              screenshots: [],
+              pageMetadata: {
+                url: '',
+                title: '',
+                loadTime: 0,
+                timestamp: new Date(),
+                viewportSize: { width: 0, height: 0 },
+                userAgent: ''
+              },
+              extractionMethods: {},
+              extractionConfidence: {}
+            },
+            fieldValidations: [],
             validations: [],
+            overallMatch: false,
+            overallConfidence: 0,
             processingTime: 0,
-            timestamp: new Date().toISOString(),
-            error: error instanceof Error ? error.message : 'Unknown error'
+            evidenceId: `error-${i}`,
+            errors: [{ message: error instanceof Error ? error.message : 'Unknown error', code: 'UNKNOWN_ERROR', field: '', severity: 'error' }],
+            metadata: {
+              version: '1.1.0',
+              timestamp: new Date(),
+              processingNode: 'main',
+              configurationHash: '',
+              modelVersion: ''
+            },
+            timestamp: new Date().toISOString()
           };
 
           results.push(errorResult);
@@ -306,13 +335,14 @@ export class TaskmasterController {
 
       // Create final report object
       const report: Report = {
+        id: `report-${Date.now()}`,
         summary,
         results,
         statistics: {
           totalRows: results.length,
           validRows: results.filter(r => r.errors.length === 0).length,
           confidenceDistribution: {},
-          extractionMethodUsage: {},
+          extractionMethodUsage: { dom: 0, ocr: 0, fuzzy: 0, manual: 0 } as Record<ExtractionMethod, number>,
           fieldAccuracy: {},
           errorsByType: {},
           performanceMetrics: {
@@ -325,7 +355,6 @@ export class TaskmasterController {
           }
         },
         timestamp: new Date(),
-        version: '1.1.0',
         configuration: this.config!,
         metadata: {
           generatedBy: 'DataHawk Taskmaster',
@@ -345,16 +374,35 @@ export class TaskmasterController {
       );
 
       return {
+        id: `report-${Date.now()}`,
+        timestamp: new Date(),
         summary,
         results,
-        metadata: {
-          configFile: options.configPath,
-          inputFile: options.inputPath,
-          timestamp: new Date().toISOString(),
-          processingTime,
-          version: '1.1.0'
+        statistics: {
+          totalRows: results.length,
+          validRows: results.filter(r => r.errors.length === 0).length,
+          confidenceDistribution: {},
+          extractionMethodUsage: { dom: 0, ocr: 0, fuzzy: 0, manual: 0 } as Record<ExtractionMethod, number>,
+          fieldAccuracy: {},
+          errorsByType: {} as Record<string, number>,
+          performanceMetrics: {
+            avgTimePerRow: results.length > 0 ? processingTime / results.length : 0,
+            memoryUsagePeak: 0,
+            cpuUtilizationAvg: 0,
+            accuracyRate: successfulValidations / Math.max(results.length, 1),
+            ocrFallbackRate: 0,
+            errorRate
+          }
         },
-        reportPaths
+        configuration: this.config!,
+        metadata: {
+          generatedBy: 'DataHawk Taskmaster',
+          version: '1.1.0',
+          format: options.formats,
+          size: 0,
+          configFile: options.configPath,
+          inputFile: options.inputPath
+        }
       };
 
     } catch (error) {
@@ -509,7 +557,7 @@ export class TaskmasterController {
 
           // Use validation results from CrewAI if available
           if (crewResult.validationResults && Array.isArray(crewResult.validationResults)) {
-            fieldValidations = this.config.fieldMappings.map((mapping, index) => {
+            fieldValidations = this.config!.fieldMappings.map((mapping, index) => {
               const decision = crewResult.validationResults[index];
               return {
                 field: mapping.csvField,
@@ -527,9 +575,9 @@ export class TaskmasterController {
 
             // Calculate overall metrics from CrewAI results
             const matchingFields = fieldValidations.filter(v => v.match).length;
-            const requiredFields = this.config.fieldMappings.filter(m => m.required).length;
+            const requiredFields = this.config!.fieldMappings.filter(m => m.required).length;
             const requiredMatches = fieldValidations.filter(v => {
-              const mapping = this.config.fieldMappings.find(m => m.csvField === v.field);
+              const mapping = this.config!.fieldMappings.find(m => m.csvField === v.field);
               return mapping?.required && v.match;
             }).length;
 
@@ -624,7 +672,7 @@ export class TaskmasterController {
         results,
         statistics: {
           confidenceDistribution: this.calculateConfidenceDistribution(results),
-          extractionMethodUsage: { dom: results.length, ocr: 0, fuzzy: 0, manual: 0 },
+          extractionMethodUsage: { dom: results.length, ocr: 0, fuzzy: 0, manual: 0 } as Record<ExtractionMethod, number>,
           fieldAccuracy: {},
           errorsByType: {},
           performanceMetrics: {
@@ -636,7 +684,7 @@ export class TaskmasterController {
             errorRate: summary.errorRate
           }
         },
-        configuration: this.config,
+        configuration: this.config!,
         metadata: {
           generatedBy: 'DataHawk v1.0.0',
           version: '1.0.0',

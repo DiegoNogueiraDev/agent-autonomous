@@ -23,7 +23,10 @@ describe('EvidenceCollector', () => {
       evidenceDir: evidenceDir
     };
 
-    evidenceCollector = new EvidenceCollector({ settings: testSettings });
+    evidenceCollector = new EvidenceCollector({ 
+      settings: testSettings,
+      baseOutputPath: evidenceDir 
+    });
   });
 
   afterEach(async () => {
