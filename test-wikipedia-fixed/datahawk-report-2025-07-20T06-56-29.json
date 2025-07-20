@@ -1,0 +1,362 @@
+{
+  "id": "report_1752994589659",
+  "timestamp": "2025-07-20T06:56:29.659Z",
+  "summary": {
+    "totalRows": 5,
+    "processedRows": 5,
+    "successfulValidations": 5,
+    "failedValidations": 0,
+    "averageConfidence": 0,
+    "processingTime": 7511,
+    "errorRate": 0
+  },
+  "results": [
+    {
+      "rowId": "row_0",
+      "csvData": {
+        "articlename": "Brasil",
+        "title": "Brasil",
+        "introduction": "O Brasil (escrita antiga: Brasil), oficialmente República Federativa do Brasil, é o maior país da América do Sul e da América Latina",
+        "infoboxtitle": "Brasil",
+        "lastmodified": "Esta página foi editada pela última vez",
+        "imagecaption": "Bandeira do Brasil"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "titulo": "Título inválido",
+          "data": null,
+          "fato": "Esta página usa sempre uma fonte pequena"
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 1773,
+      "evidenceId": "ev_1752994584320_48o93g",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T06:56:24.320Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "row_1",
+      "csvData": {
+        "articlename": "Portugal",
+        "title": "Portugal",
+        "introduction": "Portugal, oficialmente República Portuguesa, é um país soberano",
+        "infoboxtitle": "Portugal",
+        "lastmodified": "Esta página foi editada pela última vez",
+        "imagecaption": "Bandeira de Portugal"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "titulo": "Título inválido",
+          "data": null,
+          "fato": "Esta página usa sempre uma fonte pequena"
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 1366,
+      "evidenceId": "ev_1752994585686_d7erjx",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T06:56:25.686Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "row_2",
+      "csvData": {
+        "articlename": "Argentina",
+        "title": "Argentina",
+        "introduction": "Argentina, oficialmente República Argentina, é um país da América do Sul",
+        "infoboxtitle": "Argentina",
+        "lastmodified": "Esta página foi editada pela última vez",
+        "imagecaption": "Bandeira da Argentina"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "titulo": "Título inválido",
+          "data": null,
+          "fato": "Esta página usa sempre uma fonte pequena"
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 1299,
+      "evidenceId": "ev_1752994586985_fa9sl2",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T06:56:26.985Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "row_3",
+      "csvData": {
+        "articlename": "Inteligência_artificial",
+        "title": "Inteligência artificial",
+        "introduction": "Inteligência artificial (por vezes mencionada pela sigla IA) é uma tecnologia",
+        "infoboxtitle": "Inteligência artificial",
+        "lastmodified": "Esta página foi editada pela última vez",
+        "imagecaption": "Exemplo de inteligência artificial"
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "titulo": "Título inválido",
+          "data": null,
+          "fato": "Esta página usa sempre uma fonte pequena"
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 1317,
+      "evidenceId": "ev_1752994588302_ebukap",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T06:56:28.302Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    },
+    {
+      "rowId": "row_4",
+      "csvData": {
+        "articlename": "Pandemia_de_COVID-19",
+        "title": "Pandemia de COVID-19",
+        "introduction": "A pandemia de COVID-19, também conhecida como pandemia de coronavírus",
+        "infoboxtitle": "Pandemia de COVID-19",
+        "lastmodified": "Esta página foi editada pela última vez",
+        "imagecaption": "SARS-CoV-2 sem coloração\""
+      },
+      "webData": {
+        "success": true,
+        "extractedData": {
+          "titulo": "Título inválido",
+          "data": null,
+          "fato": "Esta página usa sempre uma fonte pequena"
+        },
+        "participatingAgents": [
+          "extractor"
+        ],
+        "processingTime": 500,
+        "methodsUsed": [
+          "dom_extraction"
+        ],
+        "warnings": []
+      },
+      "fieldValidations": [],
+      "overallMatch": true,
+      "overallConfidence": 0,
+      "processingTime": 1316,
+      "evidenceId": "ev_1752994589619_q9qqk4",
+      "errors": [],
+      "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-07-20T06:56:29.619Z",
+        "processingNode": "local",
+        "configurationHash": "abc123",
+        "modelVersion": "llm-browser-agent-v1"
+      }
+    }
+  ],
+  "statistics": {
+    "confidenceDistribution": {
+      "high (0.9-1.0)": 0,
+      "medium (0.7-0.9)": 0,
+      "low (0.5-0.7)": 0,
+      "very_low (0-0.5)": 5
+    },
+    "extractionMethodUsage": {
+      "dom": 5,
+      "ocr": 0,
+      "fuzzy": 0,
+      "manual": 0
+    },
+    "fieldAccuracy": {},
+    "errorsByType": {},
+    "performanceMetrics": {
+      "avgTimePerRow": 1502.2,
+      "memoryUsagePeak": 33.26378631591797,
+      "cpuUtilizationAvg": 0,
+      "accuracyRate": 1,
+      "ocrFallbackRate": 0,
+      "errorRate": 0
+    }
+  },
+  "configuration": {
+    "targetUrl": "https://pt.wikipedia.org/wiki/{titulo}",
+    "fieldMappings": [
+      {
+        "csvField": "titulo",
+        "webSelector": "h1#firstHeading",
+        "fieldType": "text",
+        "required": true,
+        "validationStrategy": "dom_extraction"
+      },
+      {
+        "csvField": "data",
+        "webSelector": ".infobox-data",
+        "fieldType": "date",
+        "required": true,
+        "validationStrategy": "dom_extraction"
+      },
+      {
+        "csvField": "fato",
+        "webSelector": "p",
+        "fieldType": "text",
+        "required": true,
+        "validationStrategy": "hybrid"
+      }
+    ],
+    "validationRules": {
+      "confidence": {
+        "minimumOverall": 0.7,
+        "minimumField": 0.6,
+        "ocrThreshold": 0.6,
+        "fuzzyMatchThreshold": 0.75
+      },
+      "fuzzyMatching": {
+        "enabled": true,
+        "algorithms": [
+          "levenshtein",
+          "jaro_winkler"
+        ],
+        "stringSimilarityThreshold": 0.75,
+        "numberTolerance": 0.001,
+        "caseInsensitive": true,
+        "ignoreWhitespace": true
+      },
+      "normalization": {
+        "whitespace": {
+          "trimLeading": true,
+          "trimTrailing": true,
+          "normalizeInternal": true
+        },
+        "case": {
+          "email": "lowercase",
+          "name": "title_case",
+          "text": "preserve"
+        },
+        "specialCharacters": {
+          "removeAccents": true,
+          "normalizeQuotes": true,
+          "normalizeDashes": true
+        },
+        "numbers": {
+          "decimalSeparator": ".",
+          "thousandSeparator": ",",
+          "currencySymbolRemove": true
+        },
+        "dates": {
+          "targetFormat": "YYYY-MM-DD",
+          "inputFormats": [
+            "MM/DD/YYYY",
+            "DD/MM/YYYY",
+            "YYYY-MM-DD"
+          ]
+        }
+      },
+      "errorHandling": {
+        "maxRetryAttempts": 3,
+        "retryDelayMs": 2000,
+        "exponentialBackoff": true,
+        "criticalErrors": [
+          "navigation_timeout",
+          "page_not_found"
+        ],
+        "recoverableErrors": [
+          "element_not_found",
+          "ocr_low_confidence"
+        ],
+        "escalationThreshold": 0.1
+      }
+    },
+    "performance": {
+      "batchProcessing": true,
+      "batchSize": 2,
+      "parallelWorkers": 3,
+      "caching": {
+        "domSnapshots": true,
+        "ocrResults": true,
+        "validationDecisions": false,
+        "ttl": 3600
+      },
+      "timeouts": {
+        "navigation": 30000,
+        "domExtraction": 15000,
+        "ocrProcessing": 45000,
+        "validationDecision": 30000,
+        "evidenceCollection": 10000
+      }
+    },
+    "evidence": {
+      "retentionDays": 30,
+      "screenshotEnabled": true,
+      "domSnapshotEnabled": true,
+      "compressionEnabled": true,
+      "includeInReports": true
+    }
+  },
+  "metadata": {
+    "generatedBy": "DataHawk v1.0.0",
+    "version": "1.0.0",
+    "format": [
+      "json",
+      "html"
+    ],
+    "size": 0
+  }
+}

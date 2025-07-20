@@ -217,7 +217,15 @@ async function handleStatusCommand(options: any) {
   // Check Python
   try {
     const { execSync } = await import('child_process');
-    const pythonVersion = execSync('python --version', { encoding: 'utf-8' }).trim();
+    let pythonVersion: string;
+    
+    try {
+      pythonVersion = execSync('python --version', { encoding: 'utf-8' }).trim();
+    } catch {
+      // Try python3 if python is not found
+      pythonVersion = execSync('python3 --version', { encoding: 'utf-8' }).trim();
+    }
+    
     console.log(`Python: ${pythonVersion} ✅`);
   } catch {
     console.log(`Python: Not found ❌`);

@@ -596,10 +596,25 @@ export class BrowserAgent implements ManagedResource {
         }
       }
 
+      // Try snake_case to camelCase conversion
+      const snakeCaseKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+      if (rowData[snakeCaseKey] !== undefined) {
+        return encodeURIComponent(String(rowData[snakeCaseKey]));
+      }
+
+      // Try camelCase to snake_case conversion
+      const camelCaseKey = key.replace(/_([a-z])/g, (_: string, letter: string) => letter.toUpperCase());
+      if (rowData[camelCaseKey] !== undefined) {
+        return encodeURIComponent(String(rowData[camelCaseKey]));
+      }
+
       // If no match found, log warning and keep placeholder
       this.logger.warn(`URL parameter '${key}' not found in CSV data`, {
         availableKeys: Object.keys(rowData),
-        url: url
+        url: url,
+        normalizedKey,
+        snakeCaseKey,
+        camelCaseKey
       });
 
       return match;
