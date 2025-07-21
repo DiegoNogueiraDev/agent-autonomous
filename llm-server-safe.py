@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 try:
     from llm_server.core.model_manager_safe import SafeLlamaServer
     from llm_server.core.health_monitor import ServerHealth
-    from llm_server.api.routes import create_app_safe
+    from llm_server.api.routes_safe import create_app_safe
     from llm_server.logs.logger import get_logger, get_metrics_logger
     from llm_server.utils.signals import setup_signal_handlers
 except ImportError as e:

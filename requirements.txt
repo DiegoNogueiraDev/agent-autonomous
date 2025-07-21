@@ -2,7 +2,7 @@
 crewai>=0.83.0
 crewai-tools>=0.12.0
 
-# LLM inference  
+# LLM inference
 llama-cpp-python>=0.2.77
 huggingface-hub>=0.20.0
 
@@ -20,6 +20,7 @@ aiohttp>=3.9.0
 # Logging and monitoring
 structlog>=23.2.0
 rich>=13.7.0
+psutil>=5.9.0
 
 # Development and testing
 pytest>=7.4.0
@@ -29,5 +30,7 @@ isort>=5.13.0
 mypy>=1.8.0
 
 # Optional: For advanced OCR preprocessing (if needed)
-# opencv-python>=4.8.0
-# Pillow>=10.2.0
+opencv-python>=4.8.0
+Pillow>=10.2.0
+python-dotenv
+flask>=2.3.0
