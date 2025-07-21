@@ -203,20 +203,20 @@ fieldMappings:
   # Campos simples -> TinyLlama (rápido)
   - csvField: 'id'
     webSelector: 'h1'
-    fieldType: 'id'
+    fieldType: 'text'
     required: true
     validationStrategy: 'dom_extraction'
 
   - csvField: 'code'
     webSelector: 'p:first-of-type'
-    fieldType: 'code'
+    fieldType: 'text'
     required: false
     validationStrategy: 'dom_extraction'
 
   # Campos numéricos -> Qwen (raciocínio numérico)
   - csvField: 'cpf'
     webSelector: '.cpf'
-    fieldType: 'cpf'
+    fieldType: 'text'
     required: false
     validationStrategy: 'dom_extraction'
 
@@ -256,11 +256,35 @@ validationRules:
     enabled: true
     algorithms: ['levenshtein', 'jaro_winkler']
     stringSimilarityThreshold: 0.8
+    numberTolerance: 0.001
     caseInsensitive: true
     ignoreWhitespace: true
+  normalization:
+    whitespace:
+      trimLeading: true
+      trimTrailing: true
+      normalizeInternal: true
+    case:
+      email: 'lowercase'
+      name: 'title_case'
+      text: 'preserve'
+    specialCharacters:
+      removeAccents: true
+      normalizeQuotes: true
+      normalizeDashes: true
+    numbers:
+      decimalSeparator: '.'
+      thousandSeparator: ','
+      currencySymbolRemove: true
+    dates:
+      targetFormat: 'YYYY-MM-DD'
+      inputFormats: ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD']
   errorHandling:
     maxRetryAttempts: 3
     retryDelayMs: 2000
+    exponentialBackoff: true
+    criticalErrors: ['navigation_timeout', 'page_not_found']
+    recoverableErrors: ['element_not_found', 'ocr_low_confidence']
     escalationThreshold: 0.1
 
 performance:
@@ -332,10 +356,10 @@ fi
 echo -e "\n${PURPLE}📋 RELATÓRIO DE CONFIGURAÇÃO${NC}"
 echo "=================================="
 echo -e "${BLUE}Modelos Disponíveis:${NC}"
-[ "$TINYLLAMA_EXISTS" = true ] && echo -e "  ✅ TinyLlama (id, code, category)"
-[ "$QWEN_EXISTS" = true ] && echo -e "  ✅ Qwen 1.8B (number, cpf, currency)"
-[ "$GEMMA_EXISTS" = true ] && echo -e "  ✅ Gemma 2B (name, address, description)"
-[ "$PHI3_EXISTS" = true ] && echo -e "  ✅ Phi-3 Mini (email, phone, complex)"
+[ "$TINYLLAMA_EXISTS" = 1 ] && echo -e "  ✅ TinyLlama (id, code, category)"
+[ "$QWEN_EXISTS" = 1 ] && echo -e "  ✅ Qwen 1.8B (number, cpf, currency)"
+[ "$GEMMA_EXISTS" = 1 ] && echo -e "  ✅ Gemma 2B (name, address, description)"
+[ "$PHI3_EXISTS" = 1 ] && echo -e "  ✅ Phi-3 Mini (email, phone, complex)"
 
 echo -e "\n${BLUE}Funcionalidades Ativas:${NC}"
 echo -e "  ✅ Seleção automática de modelos"
