@@ -3,15 +3,23 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.pyc
 *.env
 *.venv
 env/
 venv/
 ENV/
-build/
-dist/
-*.egg-info/
+env.bak/
+venv.bak/
 *.egg
+*.egg-info/
+dist/
+build/
+*.manifest
+*.spec
+
+# Jupyter Notebook
+.ipynb_checkpoints
 
 # VS Code
 .vscode/
@@ -19,60 +27,69 @@ dist/
 # macOS
 .DS_Store
 
+# Linux
+*~
+
 # Logs
 *.log
-logs/
+
+# Virtual environment
+.env/
+.venv/
+env/
+venv/
+
+# Test coverage
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.tox/
+.pytest_cache/
+pytestdebug.log
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pycharm
+.idea/
+
+# Others
+*.sqlite3
+*.db
+*.bak
+*.swp
+*.swo
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # dotenv
 .env
 .env.*
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Docker
+*.pid
+*.pid.lock
 
-# Node
-node_modules/
-
-# OS generated files
+# System Files
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# Test coverage
-htmlcov/
-.coverage
-.tox/
-.pytest_cache/
+# Git
+.git/
+.gitmodules
+.gitignore
 
-# Others
-*.sqlite3
-*.db
-data/
-models/
-
-# Temporary and backup files
-*.tmp
-*.temp
-*.backup.*
-*.bak
-*~
-
-# Test results and coverage
-coverage/
-test-results*/
-*.lcov
-lcov.info
-
-# IDE files
-.cursor/
-.claude/
-
-# Python virtual environments
-ocr-test-env/
-
-# LLM server logs
-llm-server*.log
-
-# Test artifacts
-test-without-llm.py
-test-*.js
-test-*.py
-test-*.mjs
+# Sentry
+.sentrycli/
