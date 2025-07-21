@@ -1,12 +1,11 @@
 import { readFile, stat } from 'fs/promises';
 import Papa from 'papaparse';
 import { z } from 'zod';
-import type { 
-  CSVData, 
-  CSVRow, 
-  CSVMetadata, 
-  ValidationResult,
-  ValidationError 
+import type {
+  CSVData,
+  CSVMetadata,
+  CSVRow,
+  ValidationError
 } from '../types/index.js';
 
 // Validation schemas
@@ -21,6 +20,8 @@ export interface CSVConfig {
   skipEmptyLines?: boolean;
   trimHeaders?: boolean;
   encoding?: BufferEncoding;
+  tolerantMode?: boolean;  // Modo tolerante a falhas
+  errorThreshold?: number; // Percentual máximo de linhas com erro (0.0 a 1.0)
 }
 
 export interface CSVValidationResult {
@@ -37,9 +38,11 @@ export class CSVLoader {
     maxRows: 50000,
     skipEmptyLines: true,
     trimHeaders: true,
-    encoding: 'utf-8'
+    encoding: 'utf-8',
+    tolerantMode: false,
+    errorThreshold: 0.1  // 10% máximo de linhas com erro
   };
-  
+
   // Maximum file size: 10MB
   private static readonly MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -49,7 +52,7 @@ export class CSVLoader {
   detectDelimiter(sample: string): string {
     const delimiters = [',', ';', '|', '\t'];
     const lines = sample.split('\n').slice(0, 5); // Check first 5 lines
-    
+
     let maxScore = 0;
     let bestDelimiter = ',';
 
@@ -87,81 +90,95 @@ export class CSVLoader {
   /**
    * Validate CSV file before processing
    */
-  async validateCsvFile(filePath: string): Promise<{ valid: boolean; errors: string[] }> {
+  async validateCsvFile(filePath: string, tolerantMode: boolean = false): Promise<{ valid: boolean; errors: string[] }> {
     const errors: string[] = [];
-    
+
     try {
       // Check file stats
       const fileStats = await stat(filePath);
-      
+
       // Validate file size
       if (fileStats.size > CSVLoader.MAX_FILE_SIZE) {
         errors.push(`File too large: ${Math.round(fileStats.size / 1024 / 1024)}MB (max 10MB)`);
       }
-      
+
       if (fileStats.size === 0) {
         errors.push('File is empty');
         return { valid: false, errors };
       }
-      
+
       // Read sample to validate structure
       const sampleSize = Math.min(fileStats.size, 4096); // Read first 4KB
       const fileHandle = await readFile(filePath, { encoding: 'utf-8' });
       const sample = fileHandle.substring(0, sampleSize);
-      
+
       // Check for basic CSV structure
       const lines = sample.split('\n').filter(line => line.trim().length > 0);
-      
+
       if (lines.length === 0) {
         errors.push('No valid lines found in file');
         return { valid: false, errors };
       }
-      
+
       // Detect delimiter and validate consistency
       const delimiter = this.detectDelimiter(sample);
-      const firstLineColumns = lines[0].split(delimiter).length;
-      
+      const firstLineColumns = lines[0]?.split(delimiter).length || 0;
+
       if (firstLineColumns < 2) {
         errors.push('File appears to have only one column - invalid CSV structure');
       }
-      
-      // Check consistency across first few lines
+
+      // Check consistency across first few lines (allow some tolerance)
       const sampleLines = lines.slice(0, Math.min(5, lines.length));
       const columnCounts = sampleLines.map(line => line.split(delimiter).length);
-      const isConsistent = columnCounts.every(count => count === columnCounts[0]);
+      const maxColumns = Math.max(...columnCounts);
+      const minColumns = Math.min(...columnCounts);
       
-      if (!isConsistent) {
-        errors.push(`Inconsistent number of columns detected: ${columnCounts.join(', ')}`);
+      // Em modo tolerante, ser muito mais permissivo
+      const tolerance = tolerantMode 
+        ? Math.max(5, Math.floor(maxColumns * 0.5))  // 50% de variância permitida em modo tolerante
+        : Math.max(2, Math.floor(maxColumns * 0.2)); // 20% em modo normal
+      const isAcceptable = (maxColumns - minColumns) <= tolerance;
+
+      if (!isAcceptable && !tolerantMode) {
+        errors.push(`Significant column count variance detected: ${columnCounts.join(', ')} (max variance allowed: ${tolerance})`);
+      } else if (!isAcceptable && tolerantMode) {
+        console.warn(`⚠️ Variação de colunas detectada (modo tolerante): ${columnCounts.join(', ')}`);
       }
-      
+
       // Validate encoding
       if (sample.includes('\uFFFD')) {
         errors.push('File appears to have encoding issues');
       }
-      
+
     } catch (error) {
       errors.push(`Error validating file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-    
+
     return {
       valid: errors.length === 0,
       errors
     };
   }
-  
+
   /**
    * Load and parse CSV file
    */
   async load(filePath: string, config?: CSVConfig): Promise<CSVData> {
     const mergedConfig = { ...this.defaultConfig, ...config };
-    
+
     try {
-      // Validate file first
-      const validation = await this.validateCsvFile(filePath);
-      if (!validation.valid) {
+      // Validate file first (com modo tolerante se habilitado)
+      const validation = await this.validateCsvFile(filePath, mergedConfig.tolerantMode);
+      if (!validation.valid && !mergedConfig.tolerantMode) {
         throw new Error(`CSV validation failed: ${validation.errors.join(', ')}`);
       }
       
+      // Se estiver em modo tolerante, apenas log os erros como warnings
+      if (mergedConfig.tolerantMode && validation.errors.length > 0) {
+        console.warn('⚠️ Avisos de validação CSV (modo tolerante habilitado):', validation.errors);
+      }
+
       // Read file and get metadata
       const [fileContent, fileStats] = await Promise.all([
         readFile(filePath, mergedConfig.encoding),
@@ -169,34 +186,57 @@ export class CSVLoader {
       ]);
 
       // Auto-detect delimiter if needed
-      const delimiter = mergedConfig.delimiter === 'auto' 
+      const delimiter = mergedConfig.delimiter === 'auto'
         ? this.detectDelimiter(fileContent)
         : mergedConfig.delimiter;
 
-      // Parse CSV
+      // Parse CSV com configurações aprimoradas para UTF-8 e modo tolerante
       const parseResult = Papa.parse<CSVRow>(fileContent, {
         delimiter,
         header: mergedConfig.headers,
         skipEmptyLines: mergedConfig.skipEmptyLines,
-        transformHeader: mergedConfig.trimHeaders 
+        transformHeader: mergedConfig.trimHeaders
           ? (header: string) => header.trim().toLowerCase()
           : undefined,
         transform: (value: string) => value.trim(),
-        dynamicTyping: false // Keep everything as strings for consistency
+        dynamicTyping: false, // Keep everything as strings for consistency
+        encoding: 'utf-8',    // Garantir UTF-8
+        fastMode: false,      // Usar modo mais robusto
+        skipFirstNLines: 0,
+        newline: '',          // Auto-detect newlines
+        quoteChar: '"',
+        escapeChar: '"',
+        comments: false,
+        step: mergedConfig.tolerantMode ? undefined : undefined // Para processamento linha por linha se necessário
       });
 
       if (parseResult.errors.length > 0) {
-        const criticalErrors = parseResult.errors.filter(error => 
+        const criticalErrors = parseResult.errors.filter(error =>
           error.type === 'Delimiter' || error.type === 'FieldMismatch'
         );
         
-        if (criticalErrors.length > 0) {
-          throw new Error(`CSV parsing failed: ${criticalErrors[0]?.message}`);
+        // Em modo tolerante, apenas avisar sobre erros não críticos
+        if (mergedConfig.tolerantMode) {
+          const errorCount = parseResult.errors.length;
+          const totalRows = parseResult.data.length;
+          const errorRate = totalRows > 0 ? errorCount / totalRows : 0;
+          
+          console.warn(`⚠️ Encontrados ${errorCount} erros de parsing (${(errorRate * 100).toFixed(1)}% das linhas)`);
+          
+          // Se taxa de erro exceder threshold, ainda falhar
+          if (errorRate > mergedConfig.errorThreshold) {
+            throw new Error(`Taxa de erro muito alta: ${(errorRate * 100).toFixed(1)}% (máximo permitido: ${(mergedConfig.errorThreshold * 100).toFixed(1)}%)`);
+          }
+        } else {
+          // Modo normal - tratar erros críticos
+          if (criticalErrors.length > 0) {
+            throw new Error(`CSV parsing failed: ${criticalErrors[0]?.message}`);
+          }
         }
       }
 
       // Filter and limit rows
-      let rows = parseResult.data.filter(row => 
+      let rows = parseResult.data.filter(row =>
         Object.values(row).some(value => value && value.toString().trim())
       );
 
@@ -206,16 +246,16 @@ export class CSVLoader {
 
       // Extract headers
       const headers = rows.length > 0 ? Object.keys(rows[0] || {}) : [];
-      
+
       // Additional validation after parsing
       if (headers.length === 0) {
         throw new Error('No headers found in CSV file');
       }
-      
+
       if (rows.length === 0) {
         throw new Error('No data rows found in CSV file');
       }
-      
+
       // Check for duplicate headers
       const duplicateHeaders = headers.filter((header, index) => headers.indexOf(header) !== index);
       if (duplicateHeaders.length > 0) {
@@ -361,7 +401,7 @@ export class CSVLoader {
    */
   getStatistics(data: CSVData): Record<string, any> {
     const { rows, metadata } = data;
-    
+
     if (rows.length === 0) {
       return {
         totalRows: 0,
@@ -373,7 +413,7 @@ export class CSVLoader {
 
     const totalFields = rows.length * metadata.headers.length;
     const emptyFields = rows.reduce((count, row) => {
-      return count + metadata.headers.filter(header => 
+      return count + metadata.headers.filter(header =>
         !row[header] || row[header].toString().trim() === ''
       ).length;
     }, 0);

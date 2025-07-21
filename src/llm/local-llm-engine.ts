@@ -1,4 +1,5 @@
 import { access, constants } from 'fs/promises';
+import { spawn } from 'child_process';
 import { Logger } from '../core/logger.js';
 import type {
   LLMResponse,
@@ -56,34 +57,60 @@ export class LocalLLMEngine {
    */
   async initialize(): Promise<void> {
     try {
-      this.logger.info('Initializing Local LLM Engine', {
+      this.logger.info('🔧 Inicializando Motor LLM Local', {
         modelPath: this.settings.modelPath,
         contextSize: this.settings.contextSize,
-        threads: this.settings.threads
+        threads: this.settings.threads,
+        timestamp: new Date().toISOString()
       });
 
       // Check if LLM server is running
+      this.logger.info('🔍 Verificando disponibilidade do servidor LLM...');
       const serverRunning = await this.checkLLMServer();
 
       if (serverRunning) {
-        this.logger.info('Using running LLM server');
+        this.logger.info('✅ Servidor LLM encontrado e funcionando, conectando...', {
+          serverUrl: this.workingServerUrl
+        });
         this.llama = await this.createLlamaClient();
         this.initialized = true;
       } else {
-        this.logger.warn('LLM server not running, will attempt to start it');
-        throw new Error('LLM server not running. Please start it with: python3 llm-server.py');
+        this.logger.warn('⚠️ Servidor LLM não encontrado, tentando iniciar automaticamente...');
+        
+        // Try to start the server automatically
+        const serverStarted = await this.attemptToStartServer();
+        
+        if (serverStarted) {
+          this.logger.info('🚀 Servidor LLM iniciado com sucesso, conectando...', {
+            serverUrl: this.workingServerUrl
+          });
+          this.llama = await this.createLlamaClient();
+          this.initialized = true;
+        } else {
+          const errorMsg = 'Servidor LLM não está rodando e falha ao iniciar automaticamente. Por favor, inicie manualmente com: python3 llm-server.py';
+          this.logger.error('❌ ' + errorMsg);
+          throw new Error(errorMsg);
+        }
       }
 
-      this.logger.info('Local LLM Engine initialized successfully');
+      this.logger.info('✅ Motor LLM Local inicializado com sucesso', {
+        serverUrl: this.workingServerUrl,
+        initialized: this.initialized,
+        timestamp: new Date().toISOString()
+      });
 
     } catch (error) {
-      this.logger.error('Failed to initialize LLM engine', error);
+      this.logger.error('❌ Falha ao inicializar o motor LLM', {
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString()
+      });
       throw error;
     }
   }
 
   /**
-   * Check if LLM server is running - trying multiple endpoints
+   * Check if LLM server is running - trying multiple endpoints with retry logic
    */
   private async checkLLMServer(): Promise<boolean> {
     const serverUrls = [
@@ -93,34 +120,191 @@ export class LocalLLMEngine {
       'http://127.0.0.1:8080/health'
     ];
 
-    for (const url of serverUrls) {
-      try {
-        this.logger.debug(`Checking LLM server at ${url}`);
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(5000) // 5 second timeout
-        });
+    this.logger.info('🔍 Iniciando verificação de servidores LLM disponíveis', {
+      urlsToCheck: serverUrls.length,
+      maxAttempts: 3
+    });
 
-        if (response.ok) {
-          const data = await response.json() as any;
-          const isReady = data.status === 'healthy' ||
-            data.model_loaded === true ||
-            response.status === 200;
+    // Retry logic with exponential backoff
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      this.logger.info(`🔄 Tentativa ${attempt}/${maxAttempts} de encontrar servidor LLM`, {
+        attempt,
+        timestamp: new Date().toISOString()
+      });
 
-          if (isReady) {
-            this.logger.info(`LLM server found and ready at ${url}`, { response: data });
-            this.workingServerUrl = url.replace('/health', '');
-            return true;
+      for (const url of serverUrls) {
+        try {
+          this.logger.debug(`🌐 Verificando servidor LLM em: ${url}`);
+          
+          const startTime = Date.now();
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(5000) // 5 second timeout
+          });
+          const responseTime = Date.now() - startTime;
+
+          this.logger.debug(`📡 Servidor em ${url} respondeu`, {
+            status: response.status,
+            responseTime: `${responseTime}ms`,
+            ok: response.ok
+          });
+
+          if (response.ok) {
+            const data = await response.json() as any;
+            this.logger.debug(`📄 Resposta do servidor: ${JSON.stringify(data, null, 2)}`);
+
+            const isReady = data.status === 'healthy' ||
+              data.model_loaded === true ||
+              response.status === 200;
+
+            if (isReady) {
+              this.logger.info(`✅ Servidor LLM encontrado e pronto!`, {
+                url,
+                responseTime: `${responseTime}ms`,
+                modelLoaded: data.model_loaded,
+                status: data.status,
+                loadTime: data.load_time,
+                requestCount: data.request_count
+              });
+              this.workingServerUrl = url.replace('/health', '');
+              return true;
+            } else {
+              this.logger.warn(`⚠️ Servidor encontrado mas não está pronto`, {
+                url,
+                response: data
+              });
+            }
+          } else {
+            this.logger.warn(`❌ Servidor retornou erro HTTP`, {
+              url,
+              status: response.status,
+              statusText: response.statusText
+            });
           }
+        } catch (error) {
+          this.logger.debug(`💥 Erro ao verificar servidor em ${url}`, {
+            error: error instanceof Error ? error.message : 'Erro desconhecido',
+            type: error instanceof Error ? error.constructor.name : 'UnknownError'
+          });
         }
-      } catch (error) {
-        this.logger.debug(`Failed to connect to ${url}`, { error: error instanceof Error ? error.message : 'Unknown error' });
+      }
+
+      // Wait before next attempt (exponential backoff)
+      if (attempt < maxAttempts) {
+        const delay = 1000 * attempt;
+        this.logger.info(`⏱️ Aguardando ${delay}ms antes da próxima tentativa...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
-    this.logger.warn('No working LLM server found on any of the attempted URLs');
+    this.logger.error('❌ Nenhum servidor LLM funcional encontrado após todas as tentativas', {
+      urlsTried: serverUrls,
+      attempts: maxAttempts,
+      timestamp: new Date().toISOString()
+    });
     return false;
+  }
+
+  /**
+   * Attempt to start the LLM server automatically
+   */
+  private async attemptToStartServer(): Promise<boolean> {
+    try {
+      this.logger.info('🚀 Tentando iniciar servidor LLM automaticamente...', {
+        command: 'python3 llm-server.py',
+        workingDirectory: process.cwd(),
+        timestamp: new Date().toISOString()
+      });
+      
+      // Check if the server script exists
+      const serverScript = 'llm-server.py';
+      try {
+        await access(serverScript, constants.F_OK);
+        this.logger.info('✅ Script do servidor LLM encontrado', { path: serverScript });
+      } catch {
+        this.logger.error('❌ Script do servidor LLM não encontrado', { 
+          expectedPath: serverScript,
+          currentDir: process.cwd()
+        });
+        return false;
+      }
+      
+      // Start the server process
+      this.logger.info('🔧 Iniciando processo do servidor LLM...');
+      const serverProcess = spawn('python3', ['llm-server.py'], {
+        detached: true,
+        stdio: 'ignore',
+        cwd: process.cwd()
+      });
+
+      this.logger.info('📝 Processo criado', {
+        pid: serverProcess.pid,
+        spawnfile: serverProcess.spawnfile
+      });
+
+      // Set up error handling for the process
+      serverProcess.on('error', (error) => {
+        this.logger.error('💥 Erro no processo do servidor LLM', {
+          error: error.message,
+          pid: serverProcess.pid
+        });
+      });
+
+      serverProcess.on('exit', (code, signal) => {
+        this.logger.warn('⚠️ Processo do servidor LLM terminou', {
+          exitCode: code,
+          signal,
+          pid: serverProcess.pid
+        });
+      });
+
+      // Don't keep the parent process alive
+      serverProcess.unref();
+
+      // Wait for the server to potentially start
+      this.logger.info('⏱️ Aguardando inicialização do servidor LLM (5 segundos)...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      // Check if the server is now running
+      this.logger.info('🔍 Verificando se o servidor iniciou com sucesso...');
+      const serverRunning = await this.checkLLMServer();
+      
+      if (serverRunning) {
+        this.logger.info('✅ Servidor LLM iniciado com sucesso automaticamente!', {
+          serverUrl: this.workingServerUrl,
+          pid: serverProcess.pid
+        });
+        return true;
+      } else {
+        this.logger.error('❌ Servidor LLM falhou ao iniciar ou não está pronto ainda', {
+          pid: serverProcess.pid,
+          timeWaited: '5 segundos'
+        });
+        
+        // Try to kill the process if it's still running
+        try {
+          if (!serverProcess.killed) {
+            serverProcess.kill();
+            this.logger.info('🔪 Processo do servidor morto devido à falha de inicialização');
+          }
+        } catch (killError) {
+          this.logger.warn('⚠️ Não foi possível matar o processo do servidor', {
+            error: killError instanceof Error ? killError.message : 'Erro desconhecido'
+          });
+        }
+        
+        return false;
+      }
+    } catch (error) {
+      this.logger.error('💥 Falha crítica ao tentar iniciar servidor LLM', { 
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString()
+      });
+      return false;
+    }
   }
 
   /**
@@ -199,6 +383,14 @@ export class LocalLLMEngine {
         const maxRetries = 3;
         let lastError: Error | null = null;
         
+        this.logger.info('🔍 Iniciando validação específica', {
+          fieldName: request.fieldName,
+          fieldType: request.fieldType,
+          csvValue: request.csvValue?.toString().substring(0, 100) + (request.csvValue?.toString().length > 100 ? '...' : ''),
+          webValue: request.webValue?.toString().substring(0, 100) + (request.webValue?.toString().length > 100 ? '...' : ''),
+          maxRetries
+        });
+        
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
             const url = `${baseUrl}/validate`;
@@ -209,27 +401,49 @@ export class LocalLLMEngine {
               field_name: request.fieldName
             };
             
-            this.logger.debug('Making validation request', { url, payload, attempt });
+            this.logger.info(`🌐 Fazendo requisição de validação (tentativa ${attempt}/${maxRetries})`, { 
+              url, 
+              attempt,
+              fieldName: request.fieldName,
+              payloadSize: JSON.stringify(payload).length
+            });
             
             // Add a small delay between retries
             if (attempt > 1) {
-              await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+              const delay = 1000 * attempt;
+              this.logger.info(`⏱️ Aguardando ${delay}ms antes da nova tentativa...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
             }
             
             // Check if server is still alive before making request
+            this.logger.debug('🩺 Verificando saúde do servidor antes da requisição...');
             try {
+              const healthStart = Date.now();
               const healthResponse = await fetch(`${baseUrl}/health`, {
                 method: 'GET',
                 signal: AbortSignal.timeout(5000)
               });
+              const healthTime = Date.now() - healthStart;
+              
               if (!healthResponse.ok) {
-                throw new Error('Server health check failed');
+                throw new Error(`Health check retornou status ${healthResponse.status}`);
               }
+              
+              const healthData = await healthResponse.json();
+              this.logger.debug(`✅ Servidor saudável`, {
+                responseTime: `${healthTime}ms`,
+                modelLoaded: healthData.model_loaded,
+                requestCount: healthData.request_count
+              });
             } catch (healthError) {
-              throw new Error(`LLM server is not responding to health checks: ${healthError instanceof Error ? healthError.message : 'Unknown error'}`);
+              const errorMsg = `Servidor LLM não está respondendo aos health checks: ${healthError instanceof Error ? healthError.message : 'Erro desconhecido'}`;
+              this.logger.error('💔 ' + errorMsg);
+              throw new Error(errorMsg);
             }
             
             // Use dedicated /validate endpoint
+            this.logger.debug('📤 Enviando requisição de validação...');
+            const requestStart = Date.now();
             const response = await fetch(url, {
               method: 'POST',
               headers: {
@@ -237,21 +451,37 @@ export class LocalLLMEngine {
                 'Accept': 'application/json'
               },
               body: JSON.stringify(payload),
-              signal: AbortSignal.timeout(10000) // Reduced timeout to 10 seconds
+              signal: AbortSignal.timeout(15000) // Increased timeout to 15 seconds
+            });
+            const requestTime = Date.now() - requestStart;
+
+            this.logger.debug(`📥 Resposta recebida`, {
+              status: response.status,
+              statusText: response.statusText,
+              responseTime: `${requestTime}ms`,
+              ok: response.ok
             });
 
             if (!response.ok) {
-              throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+              throw new Error(`Servidor respondeu com ${response.status}: ${response.statusText}`);
             }
 
             const data = await response.json() as any;
+            
+            this.logger.info('✅ Validação concluída com sucesso', {
+              attempt,
+              responseTime: `${requestTime}ms`,
+              match: data.match,
+              confidence: data.confidence,
+              reasoning: data.reasoning?.substring(0, 100)
+            });
 
             // Ensure we have the expected format
             return {
               text: JSON.stringify({
                 match: Boolean(data.match),
                 confidence: Math.min(1.0, Math.max(0.0, parseFloat(data.confidence || 0.5))),
-                reasoning: String(data.reasoning || 'Validation completed')
+                reasoning: String(data.reasoning || 'Validação concluída')
               }),
               tokens: data.tokens || 0,
               processing_time: data.processing_time || 0
@@ -259,11 +489,13 @@ export class LocalLLMEngine {
           } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
             
-            this.logger.warn(`Validation request failed (attempt ${attempt}/${maxRetries})`, { 
+            this.logger.warn(`⚠️ Requisição de validação falhou (tentativa ${attempt}/${maxRetries})`, { 
               error: lastError.message,
+              errorType: lastError.constructor.name,
               url: `${baseUrl}/validate`,
               attempt,
-              willRetry: attempt < maxRetries
+              willRetry: attempt < maxRetries,
+              fieldName: request.fieldName
             });
             
             // If this was the last attempt, break and throw
@@ -276,21 +508,30 @@ export class LocalLLMEngine {
         }
         
         // All retries failed
-        this.logger.error('All validation request attempts failed', { 
+        this.logger.error('❌ Todas as tentativas de validação falharam', { 
           error: lastError?.message,
+          errorType: lastError?.constructor.name,
           url: `${baseUrl}/validate`,
-          attempts: maxRetries
+          attempts: maxRetries,
+          fieldName: request.fieldName,
+          timestamp: new Date().toISOString()
         });
         
         if (lastError && lastError.name === 'AbortError') {
-          throw new Error('LLM validation request timed out after all retries');
+          const errorMsg = 'Requisição de validação LLM expirou após todas as tentativas';
+          this.logger.error('⏰ ' + errorMsg);
+          throw new Error(errorMsg);
         }
         
         if (lastError && lastError.message.includes('fetch failed')) {
-          throw new Error(`LLM validation request failed: Unable to connect to server at ${baseUrl}/validate after ${maxRetries} attempts`);
+          const errorMsg = `Requisição de validação LLM falhou: Não foi possível conectar ao servidor em ${baseUrl}/validate após ${maxRetries} tentativas`;
+          this.logger.error('🔌 ' + errorMsg);
+          throw new Error(errorMsg);
         }
         
-        throw new Error(`LLM validation request failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`);
+        const errorMsg = `Requisição de validação LLM falhou após ${maxRetries} tentativas: ${lastError?.message || 'Erro desconhecido'}`;
+        this.logger.error('💥 ' + errorMsg);
+        throw new Error(errorMsg);
       }
     };
   }
@@ -300,52 +541,71 @@ export class LocalLLMEngine {
    */
   async makeValidationDecision(request: ValidationDecisionRequest): Promise<ValidationDecisionResponse> {
     if (!this.initialized) {
-      throw new Error('LLM Engine not initialized. Call initialize() first.');
+      const errorMsg = 'Motor LLM não inicializado. Chame initialize() primeiro.';
+      this.logger.error('❌ ' + errorMsg);
+      throw new Error(errorMsg);
     }
 
     this.requestCount++;
     const startTime = Date.now();
 
     try {
-      this.logger.debug('Making validation decision', {
+      this.logger.info('🤖 Fazendo decisão de validação', {
         fieldName: request.fieldName,
         fieldType: request.fieldType,
-        requestId: this.requestCount
+        requestId: this.requestCount,
+        csvValuePreview: request.csvValue?.toString().substring(0, 50) + (request.csvValue?.toString().length > 50 ? '...' : ''),
+        webValuePreview: request.webValue?.toString().substring(0, 50) + (request.webValue?.toString().length > 50 ? '...' : ''),
+        timestamp: new Date().toISOString()
       });
 
       // Use the dedicated validation endpoint
+      this.logger.debug('📡 Chamando endpoint de validação específica...');
       const llmResponse = await this.llama.validateSpecific(request);
 
       // Parse the response
+      this.logger.debug('🔄 Analisando resposta do LLM...');
       const decision = this.parseValidationResponse(llmResponse, request);
 
       const processingTime = Date.now() - startTime;
-      this.logger.debug('Validation decision completed', {
+      this.logger.info('✅ Decisão de validação concluída', {
         fieldName: request.fieldName,
         match: decision.match,
         confidence: decision.confidence,
-        processingTime
+        processingTime: `${processingTime}ms`,
+        requestId: this.requestCount,
+        reasoning: decision.reasoning?.substring(0, 100)
       });
 
       return decision;
 
     } catch (error) {
       const processingTime = Date.now() - startTime;
-      this.logger.error('Failed to make validation decision', {
+      this.logger.error('💥 Falha ao fazer decisão de validação', {
         fieldName: request.fieldName,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        processingTime
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+        errorType: error instanceof Error ? error.constructor.name : 'UnknownError',
+        processingTime: `${processingTime}ms`,
+        requestId: this.requestCount,
+        timestamp: new Date().toISOString()
       });
 
       // Return a safe fallback decision
-      return {
+      const fallbackDecision = {
         match: false,
         confidence: 0.0,
-        reasoning: `Error during validation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        reasoning: `Erro durante validação: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
         normalizedCsvValue: request.csvValue,
         normalizedWebValue: request.webValue,
-        issues: [`LLM processing error: ${error instanceof Error ? error.message : 'Unknown error'}`]
+        issues: [`Erro de processamento LLM: ${error instanceof Error ? error.message : 'Erro desconhecido'}`]
       };
+      
+      this.logger.info('🔄 Retornando decisão de fallback', {
+        fieldName: request.fieldName,
+        fallbackDecision
+      });
+      
+      return fallbackDecision;
     }
   }
 
@@ -358,38 +618,69 @@ export class LocalLLMEngine {
   ): ValidationDecisionResponse {
     const text = llmResponse.text;
 
+    this.logger.debug('🔄 Analisando resposta do LLM', {
+      textLength: text.length,
+      textPreview: text.substring(0, 200) + (text.length > 200 ? '...' : ''),
+      tokens: llmResponse.tokens,
+      processingTime: llmResponse.processingTime
+    });
+
     try {
       // Try direct JSON parsing first
+      this.logger.debug('📝 Tentando parsing direto de JSON...');
       const parsed = JSON.parse(text);
+      this.logger.info('✅ JSON parseado com sucesso (método direto)', {
+        keys: Object.keys(parsed),
+        match: parsed.match,
+        confidence: parsed.confidence
+      });
       return this.buildValidationDecision(parsed, request);
     } catch (error) {
-      this.logger.debug('Direct JSON parsing failed, trying extraction methods', { error });
+      this.logger.debug('⚠️ Parsing direto de JSON falhou, tentando métodos de extração', { 
+        error: error instanceof Error ? error.message : 'Erro desconhecido' 
+      });
 
       // Try to extract JSON from text using regex
+      this.logger.debug('🔍 Tentando extrair JSON do texto...');
       const extractedJson = this.extractJsonFromText(text);
       if (extractedJson) {
         try {
           const parsed = JSON.parse(extractedJson);
+          this.logger.info('✅ JSON extraído e parseado com sucesso', {
+            extractedJson: extractedJson.substring(0, 100),
+            keys: Object.keys(parsed)
+          });
           return this.buildValidationDecision(parsed, request);
         } catch (e) {
-          this.logger.debug('Extracted JSON parsing failed', { extractedJson, error: e });
+          this.logger.debug('❌ Parsing de JSON extraído falhou', { 
+            extractedJson: extractedJson.substring(0, 100), 
+            error: e instanceof Error ? e.message : 'Erro desconhecido' 
+          });
         }
       }
 
       // Try fixing common JSON issues
+      this.logger.debug('🔧 Tentando corrigir problemas comuns de JSON...');
       const fixedJson = this.fixCommonJsonIssues(text);
       if (fixedJson) {
         try {
           const parsed = JSON.parse(fixedJson);
+          this.logger.info('✅ JSON corrigido e parseado com sucesso', {
+            fixedJson: fixedJson.substring(0, 100),
+            keys: Object.keys(parsed)
+          });
           return this.buildValidationDecision(parsed, request);
         } catch (e) {
-          this.logger.debug('Fixed JSON parsing failed', { fixedJson, error: e });
+          this.logger.debug('❌ Parsing de JSON corrigido falhou', { 
+            fixedJson: fixedJson.substring(0, 100), 
+            error: e instanceof Error ? e.message : 'Erro desconhecido' 
+          });
         }
       }
 
-      this.logger.warn('All JSON parsing methods failed, falling back to text parsing', {
-        originalText: text,
-        error
+      this.logger.warn('⚠️ Todos os métodos de parsing JSON falharam, usando parsing de texto estruturado', {
+        originalText: text.substring(0, 100),
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
       });
 
       // Fallback to structured text parsing

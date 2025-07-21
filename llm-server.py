@@ -9,9 +9,21 @@ import sys
 import json
 import time
 import re
+import traceback
+import logging
+import gc
+from datetime import datetime
 from pathlib import Path
 from flask import Flask, request, jsonify
 from llama_cpp import Llama
+
+# Configurar logging em português
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 llm = None
@@ -26,12 +38,27 @@ class LlamaServer:
     def load_model(self, model_path: str):
         """Load the Llama model"""
         if self.model_loaded:
+            logger.info("🔄 Modelo já carregado, retornando sucesso")
             return True
 
-        print(f"🔄 Loading model from {model_path}...")
+        logger.info(f"🔄 Carregando modelo de {model_path}...")
+        print(f"🔄 Carregando modelo de {model_path}...")
         start_time = time.time()
 
         try:
+            # Verificar se o arquivo existe
+            if not Path(model_path).exists():
+                error_msg = f"❌ Arquivo do modelo não encontrado: {model_path}"
+                logger.error(error_msg)
+                print(error_msg)
+                return False
+
+            # Verificar tamanho do arquivo
+            file_size = Path(model_path).stat().st_size / (1024 * 1024 * 1024)  # GB
+            logger.info(f"📊 Tamanho do modelo: {file_size:.2f} GB")
+            print(f"📊 Tamanho do modelo: {file_size:.2f} GB")
+
+            logger.info("🔧 Inicializando Llama com configurações...")
             self.llm = Llama(
                 model_path=model_path,
                 n_ctx=8192,
@@ -42,22 +69,36 @@ class LlamaServer:
 
             self.load_time = time.time() - start_time
             self.model_loaded = True
-            print(f"✅ Model loaded successfully in {self.load_time:.1f}s")
+            success_msg = f"✅ Modelo carregado com sucesso em {self.load_time:.1f}s"
+            logger.info(success_msg)
+            print(success_msg)
             return True
 
         except Exception as e:
-            print(f"❌ Failed to load model: {e}")
+            error_msg = f"❌ Falha ao carregar modelo: {e}"
+            logger.error(error_msg, exc_info=True)
+            print(error_msg)
+            print(f"🔍 Stack trace: {traceback.format_exc()}")
             return False
 
     def generate(self, prompt: str, max_tokens: int = 1024, temperature: float = 0.1):
         """Generate response from the model"""
         if not self.model_loaded:
-            raise RuntimeError("Model not loaded")
+            error_msg = "❌ Modelo não carregado"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
 
         self.request_count += 1
         start_time = time.time()
 
+        logger.info(f"🤖 Gerando resposta (requisição #{self.request_count})", extra={
+            'prompt_length': len(prompt),
+            'max_tokens': max_tokens,
+            'temperature': temperature
+        })
+
         try:
+            logger.debug("📤 Enviando prompt para o modelo...")
             response = self.llm(
                 prompt,
                 max_tokens=max_tokens,
@@ -67,16 +108,31 @@ class LlamaServer:
             )
 
             processing_time = time.time() - start_time
+            result_text = response['choices'][0]['text'].strip()
+            
+            logger.info(f"✅ Resposta gerada com sucesso", extra={
+                'processing_time': f"{processing_time:.2f}s",
+                'tokens_generated': response['usage']['completion_tokens'],
+                'response_length': len(result_text),
+                'request_id': self.request_count
+            })
 
             return {
-                "text": response['choices'][0]['text'].strip(),
+                "text": result_text,
                 "tokens": response['usage']['completion_tokens'],
                 "processing_time": processing_time,
                 "model": "llama3-8b-instruct"
             }
 
         except Exception as e:
-            print(f"❌ Generation failed: {e}")
+            processing_time = time.time() - start_time
+            error_msg = f"❌ Falha na geração: {e}"
+            logger.error(error_msg, extra={
+                'processing_time': f"{processing_time:.2f}s",
+                'request_id': self.request_count,
+                'error_type': type(e).__name__
+            }, exc_info=True)
+            print(error_msg)
             raise
 
     def extract_json_from_text(self, text: str):
@@ -99,13 +155,34 @@ server = LlamaServer()
 
 @app.route('/health', methods=['GET'])
 def health():
-    """Health check endpoint"""
-    return jsonify({
-        "status": "healthy",
-        "model_loaded": server.model_loaded,
-        "load_time": server.load_time,
-        "request_count": server.request_count
-    })
+    """Health check endpoint with basic monitoring"""
+    try:
+        health_data = {
+            "status": "healthy",
+            "model_loaded": server.model_loaded,
+            "load_time": server.load_time,
+            "request_count": server.request_count,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Log a cada 10 requisições para monitorar atividade
+        if server.request_count % 10 == 0 and server.request_count > 0:
+            logger.info(f"📊 Status de saúde (requisição #{server.request_count})")
+            
+            # Executar garbage collection periodicamente
+            logger.debug("🧹 Executando garbage collection...")
+            gc.collect()
+        
+        return jsonify(health_data)
+        
+    except Exception as e:
+        logger.error(f"❌ Erro no health check: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "model_loaded": server.model_loaded if 'server' in globals() else False,
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 @app.route('/load', methods=['POST'])
 def load_model():
@@ -182,16 +259,42 @@ def completion():
 @app.route('/validate', methods=['POST'])
 def validate():
     """Validation-specific endpoint with guaranteed JSON format"""
+    request_start = time.time()
+    
     try:
+        logger.info("🔍 Recebendo requisição de validação")
+        
+        # Validar dados de entrada
+        if not request.is_json:
+            error_msg = "❌ Content-Type deve ser application/json"
+            logger.error(error_msg)
+            return jsonify({"error": error_msg}), 400
+            
         data = request.get_json()
+        if not data:
+            error_msg = "❌ Corpo da requisição vazio ou inválido"
+            logger.error(error_msg)
+            return jsonify({"error": error_msg}), 400
+            
         csv_value = str(data.get('csv_value', ''))
         web_value = str(data.get('web_value', ''))
         field_type = str(data.get('field_type', 'string'))
         field_name = str(data.get('field_name', 'field'))
 
+        logger.info(f"📋 Validando campo '{field_name}' (tipo: {field_type})", extra={
+            'csv_value_length': len(csv_value),
+            'web_value_length': len(web_value),
+            'csv_preview': csv_value[:50] + ('...' if len(csv_value) > 50 else ''),
+            'web_preview': web_value[:50] + ('...' if len(web_value) > 50 else '')
+        })
+
         # Handle special characters and encoding
-        csv_value = csv_value.encode('utf-8').decode('utf-8')
-        web_value = web_value.encode('utf-8').decode('utf-8')
+        try:
+            csv_value = csv_value.encode('utf-8').decode('utf-8')
+            web_value = web_value.encode('utf-8').decode('utf-8')
+            logger.debug("✅ Encoding UTF-8 processado com sucesso")
+        except Exception as enc_error:
+            logger.warning(f"⚠️ Problema com encoding UTF-8: {enc_error}")
 
         # Optimized prompt for validation
         prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
@@ -216,10 +319,20 @@ Web Value: "{web_value}"
 
 Are these values equivalent? Respond with JSON only.<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
 
-        result = server.generate(prompt, max_tokens=150, temperature=0.1)
+        logger.debug("🤖 Enviando prompt para o modelo LLM...")
+        try:
+            result = server.generate(prompt, max_tokens=150, temperature=0.1)
+            logger.info(f"✅ Resposta do modelo recebida", extra={
+                'tokens': result['tokens'],
+                'processing_time': f"{result['processing_time']:.2f}s"
+            })
+        except Exception as gen_error:
+            logger.error(f"💥 Erro na geração do modelo: {gen_error}", exc_info=True)
+            raise
 
         # Clean and parse response
         response_text = result['text'].strip()
+        logger.debug(f"📝 Texto da resposta: {response_text[:200]}...")
 
         # Remove any markdown formatting
         response_text = re.sub(r'```json\s*', '', response_text)
@@ -227,19 +340,35 @@ Are these values equivalent? Respond with JSON only.<|eot_id|><|start_header_id|
         response_text = response_text.strip()
 
         # Try to extract JSON
+        logger.debug("🔍 Tentando extrair JSON da resposta...")
         json_data = server.extract_json_from_text(response_text)
 
         if json_data and all(key in json_data for key in ['match', 'confidence', 'reasoning']):
+            logger.info("✅ JSON extraído com sucesso", extra={
+                'match': json_data.get('match'),
+                'confidence': json_data.get('confidence'),
+                'reasoning_preview': str(json_data.get('reasoning', ''))[:50]
+            })
+            
             # Ensure correct types
-            return jsonify({
+            final_result = {
                 "match": bool(json_data.get('match', False)),
                 "confidence": float(min(max(json_data.get('confidence', 0.5), 0.0), 1.0)),
-                "reasoning": str(json_data.get('reasoning', 'Validation completed')),
+                "reasoning": str(json_data.get('reasoning', 'Validação concluída')),
                 "processing_time": result['processing_time'],
                 "tokens": result['tokens']
+            }
+            
+            total_time = time.time() - request_start
+            logger.info(f"🎉 Validação concluída com sucesso", extra={
+                'total_time': f"{total_time:.2f}s",
+                'field_name': field_name
             })
+            
+            return jsonify(final_result)
 
         # Fallback with structured parsing
+        logger.warning("⚠️ Falha ao extrair JSON, usando fallback de comparação de strings")
         match = False
         confidence = 0.5
 
@@ -257,19 +386,35 @@ Are these values equivalent? Respond with JSON only.<|eot_id|><|start_header_id|
             match = True
             confidence = 0.7
 
-        return jsonify({
+        fallback_result = {
             "match": match,
             "confidence": confidence,
-            "reasoning": "Fallback string comparison",
+            "reasoning": "Comparação de string fallback",
             "processing_time": result['processing_time'],
             "tokens": result['tokens']
+        }
+        
+        total_time = time.time() - request_start
+        logger.info(f"🔄 Validação concluída via fallback", extra={
+            'total_time': f"{total_time:.2f}s",
+            'field_name': field_name,
+            'match': match
         })
 
+        return jsonify(fallback_result)
+
     except Exception as e:
+        total_time = time.time() - request_start
+        error_msg = f"💥 Erro na validação: {str(e)}"
+        logger.error(error_msg, extra={
+            'total_time': f"{total_time:.2f}s",
+            'error_type': type(e).__name__
+        }, exc_info=True)
+        
         return jsonify({
             "match": False,
             "confidence": 0.0,
-            "reasoning": f"Error: {str(e)}",
+            "reasoning": f"Erro: {str(e)}",
             "processing_time": 0,
             "tokens": 0
         }), 500
