@@ -1,8 +1,7 @@
-import { Logger } from '../core/logger.js';
 import { access, constants } from 'fs/promises';
-import type { 
-  LLMSettings, 
-  LLMResponse, 
+import { Logger } from '../core/logger.js';
+import type {
+  LLMSettings,
   ValidationDecisionRequest,
   ValidationDecisionResponse
 } from '../types/index.js';
@@ -10,24 +9,51 @@ import type {
 export interface LLMEngineOptions {
   settings: LLMSettings;
   enableFallback?: boolean;
+  learningEnabled?: boolean;
+  cacheEnabled?: boolean;
+}
+
+export interface ModelPerformance {
+  avg_confidence: number;
+  avg_processing_time_ms: number;
+  total_decisions: number;
+  high_confidence_rate: number;
+}
+
+export interface ModelInfo {
+  name: string;
+  description: string;
+  memory_requirement_gb: number;
+  strengths: string[];
+  optimal_for: string[];
+  is_loaded: boolean;
+  is_current: boolean;
+  performance: ModelPerformance;
 }
 
 /**
- * Local LLM Engine for making validation decisions
- * Real implementation using llama-cpp-python
+ * Local LLM Engine v2.0 - Sistema Multi-Modelo Inteligente
+ * Integra com servidor Python para seleção automática de modelos
+ * e sistema de aprendizado retroativo
  */
 export class LocalLLMEngine {
   private logger: Logger;
   private settings: LLMSettings;
   private initialized: boolean = false;
   private requestCount: number = 0;
-  private llama: any = null; // Will hold the actual llama-cpp-python instance
   private enableFallback: boolean;
+  private learningEnabled: boolean;
+  private cacheEnabled: boolean;
+  private serverUrl: string = 'http://localhost:8000';
+  private availableModels: ModelInfo[] = [];
+  private fieldTypeMapping: Record<string, string> = {};
 
   constructor(options: LLMEngineOptions) {
     this.logger = Logger.getInstance();
     this.settings = options.settings;
     this.enableFallback = options.enableFallback ?? true;
+    this.learningEnabled = options.learningEnabled ?? true;
+    this.cacheEnabled = options.cacheEnabled ?? true;
   }
 
   /**
@@ -44,336 +70,460 @@ export class LocalLLMEngine {
   }
 
   /**
-   * Check if the LLM engine is initialized
-   */
-  isInitialized(): boolean {
-    return this.initialized;
-  }
-
-  /**
-   * Initialize the LLM engine
+   * Initialize the LLM engine with multi-model support
    */
   async initialize(): Promise<void> {
     try {
-      this.logger.info('Initializing Local LLM Engine', {
-        modelPath: this.settings.modelPath,
-        contextSize: this.settings.contextSize,
-        threads: this.settings.threads
+      this.logger.info('🤖 Inicializando Sistema Multi-Modelo LLM v2.0', {
+        learningEnabled: this.learningEnabled,
+        cacheEnabled: this.cacheEnabled,
+        serverUrl: this.serverUrl,
+        timestamp: new Date().toISOString()
       });
 
-      // Check if primary model exists
-      const primaryExists = await this.checkModelExists();
-      let modelToLoad = this.settings.modelPath;
+      // Check if LLM server is running
+      this.logger.info('🔍 Verificando servidor LLM multi-modelo...');
+      const serverHealthy = await this.checkLLMServer();
 
-      if (!primaryExists && this.enableFallback && this.settings.fallbackModelPath) {
-        this.logger.warn('Primary model not found, checking fallback', {
-          primary: this.settings.modelPath,
-          fallback: this.settings.fallbackModelPath
-        });
-
-        const fallbackExists = await this.checkModelExists(this.settings.fallbackModelPath);
-        if (fallbackExists) {
-          modelToLoad = this.settings.fallbackModelPath;
-          this.logger.info('Using fallback model', { modelPath: modelToLoad });
-        } else {
-          throw new Error(`Neither primary nor fallback model found`);
-        }
-      } else if (!primaryExists) {
-        throw new Error(`Model file not found: ${this.settings.modelPath}`);
+      if (!serverHealthy) {
+        throw new Error('Servidor LLM não está disponível. Execute: python3 llm-server-production.py');
       }
 
-      // Initialize llama-cpp-python
-      await this.initializeLlamaCpp(modelToLoad);
+      // Get available models and configuration
+      await this.loadModelsConfiguration();
 
       this.initialized = true;
-      this.logger.info('Local LLM Engine initialized successfully');
+      this.logger.info('✅ Sistema Multi-Modelo LLM inicializado com sucesso', {
+        availableModels: this.availableModels.length,
+        fieldTypeMappings: Object.keys(this.fieldTypeMapping).length,
+        timestamp: new Date().toISOString()
+      });
 
     } catch (error) {
-      this.logger.error('Failed to initialize LLM engine', error);
+      this.logger.error('❌ Falha ao inicializar o sistema LLM', {
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString()
+      });
       throw error;
     }
   }
 
   /**
-   * Initialize the actual llama-cpp-python instance
+   * Check if LLM server is running with multi-model support
    */
-  private async initializeLlamaCpp(modelPath: string): Promise<void> {
+  private async checkLLMServer(): Promise<boolean> {
+    const healthUrl = `${this.serverUrl}/health`;
+
     try {
-      // Dynamic import of llama-cpp-python (if available)
-      // For now, use a stub implementation that simulates the real behavior
-      this.llama = await this.createLlamaStub(modelPath);
+      this.logger.debug(`🩺 Verificando saúde do servidor: ${healthUrl}`);
+
+      const response = await fetch(healthUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+
+      if (!response.ok) {
+        this.logger.warn(`⚠️ Servidor retornou status ${response.status}`);
+        return false;
+      }
+
+      const healthData = await response.json() as any;
+
+      this.logger.info('✅ Servidor LLM multi-modelo está saudável', {
+        status: healthData.status,
+        modelsLoaded: healthData.models_loaded || [],
+        modelsAvailable: healthData.models_available || [],
+        currentModel: healthData.current_model,
+        memoryUsage: healthData.memory_usage,
+        availableMemory: healthData.available_memory_gb,
+        requestCount: healthData.request_count,
+        learningSystemEnabled: healthData.learning_system_enabled
+      });
+
+      return healthData.status === 'healthy' || healthData.models_available?.length > 0;
+
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to initialize llama-cpp: ${errorMessage}`);
+      this.logger.error('💥 Erro ao verificar servidor LLM', {
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+        url: healthUrl
+      });
+      return false;
     }
   }
 
   /**
-   * Create a stub implementation that simulates real LLM behavior
-   * This will be replaced with actual llama-cpp-python integration
+   * Load models configuration and capabilities
    */
-  private async createLlamaStub(modelPath: string): Promise<any> {
-    return {
-      modelPath,
-      initialized: true,
-      generate: async (prompt: string) => {
-        // Simulate processing time
-        await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
-        
-        // Parse the prompt to understand what we're being asked
-        const isValidationPrompt = prompt.includes('validate') || prompt.includes('compare');
-        
-        if (isValidationPrompt) {
-          return this.generateValidationResponse(prompt);
-        }
-        
-        return {
-          text: `This is a simulated response from ${modelPath.split('/').pop()}`,
-          tokens: 50,
-          processing_time: 0.15
-        };
+  private async loadModelsConfiguration(): Promise<void> {
+    try {
+      this.logger.info('📋 Carregando configuração de modelos...');
+
+      const modelsUrl = `${this.serverUrl}/models`;
+      const response = await fetch(modelsUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro ao obter configuração de modelos: ${response.status}`);
       }
-    };
+
+      const modelsData = await response.json() as any;
+
+      // Extract models information
+      this.availableModels = modelsData.models || [];
+      this.fieldTypeMapping = modelsData.field_type_mapping || {};
+
+      this.logger.info('✅ Configuração de modelos carregada', {
+        totalModels: this.availableModels.length,
+        loadedModels: this.availableModels.filter(m => m.is_loaded).length,
+        fieldTypeMappings: Object.keys(this.fieldTypeMapping).length,
+        availableMemory: modelsData.available_memory_gb
+      });
+
+      // Log model capabilities
+      this.availableModels.forEach(model => {
+        this.logger.debug(`📚 Modelo ${model.name}: ${model.description}`, {
+          strengths: model.strengths,
+          optimalFor: model.optimal_for,
+          isLoaded: model.is_loaded,
+          performance: model.performance
+        });
+      });
+
+    } catch (error) {
+      this.logger.error('❌ Erro ao carregar configuração de modelos', {
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+      throw error;
+    }
   }
 
-  /**
-   * Generate a realistic validation response based on the prompt
-   */
-  private generateValidationResponse(prompt: string): any {
-    // Extract values from the prompt for analysis
-    const csvMatch = prompt.match(/CSV.*?:\s*['"](.*?)['"]/i);
-    const webMatch = prompt.match(/Web.*?:\s*['"](.*?)['"]/i);
-    
-    const csvValue = csvMatch ? csvMatch[1] : '';
-    const webValue = webMatch ? webMatch[1] : '';
-    
-    // Simple validation logic
-    const normalized1 = this.normalizeForComparison(csvValue || '');
-    const normalized2 = this.normalizeForComparison(webValue || '');
-    const match = normalized1 === normalized2;
-    const confidence = match ? 0.95 : 0.15;
-    
-    const reasoning = match 
-      ? `Values match after normalization: "${normalized1}" === "${normalized2}"`
-      : `Values differ: "${normalized1}" !== "${normalized2}"`;
+     /**
+    * Select optimal model for field type
+    */
+   private selectModelForFieldType(fieldType: string): string | null {
+     // Check direct mapping
+     if (this.fieldTypeMapping[fieldType]) {
+       const mappedModel = this.fieldTypeMapping[fieldType];
+       this.logger.debug(`🎯 Modelo mapeado para ${fieldType}: ${mappedModel}`);
+       return mappedModel || null;
+     }
 
-    const response = JSON.stringify({
-      match,
-      confidence,
-      reasoning,
-      normalized_csv: normalized1,
-      normalized_web: normalized2
-    });
+     // Fallback to models that handle this field type
+     for (const model of this.availableModels) {
+       if (model.optimal_for.includes(fieldType) && model.is_loaded) {
+         this.logger.debug(`🔄 Modelo fallback para ${fieldType}: ${model.name}`);
+         return model.name;
+       }
+     }
 
-    return {
-      text: response,
-      tokens: response.length / 4,
-      processing_time: 0.08 + Math.random() * 0.1
-    };
-  }
+     // Last resort: use any loaded model
+     const loadedModel = this.availableModels.find(m => m.is_loaded);
+     if (loadedModel) {
+       this.logger.debug(`⚡ Modelo padrão para ${fieldType}: ${loadedModel.name}`);
+       return loadedModel.name;
+     }
+
+     return null;
+   }
 
   /**
-   * Normalize values for comparison
-   */
-  private normalizeForComparison(value: string): string {
-    if (!value) return '';
-    return value.toLowerCase().trim().replace(/\s+/g, ' ');
-  }
-
-  /**
-   * Make a validation decision using the local LLM
+   * Make a validation decision using optimal model selection
    */
   async makeValidationDecision(request: ValidationDecisionRequest): Promise<ValidationDecisionResponse> {
     if (!this.initialized) {
-      throw new Error('LLM Engine not initialized. Call initialize() first.');
+      throw new Error('Sistema LLM não inicializado. Chame initialize() primeiro.');
     }
 
     this.requestCount++;
     const startTime = Date.now();
 
     try {
-      this.logger.debug('Making validation decision', {
+      this.logger.info('🤖 Fazendo decisão de validação com sistema multi-modelo', {
         fieldName: request.fieldName,
         fieldType: request.fieldType,
+        requestId: this.requestCount,
+        csvValuePreview: request.csvValue?.toString().substring(0, 50) + (request.csvValue?.toString().length > 50 ? '...' : ''),
+        webValuePreview: request.webValue?.toString().substring(0, 50) + (request.webValue?.toString().length > 50 ? '...' : ''),
+        timestamp: new Date().toISOString()
+      });
+
+      // Select optimal model for this field type
+      const selectedModel = this.selectModelForFieldType(request.fieldType);
+      if (!selectedModel) {
+        throw new Error('Nenhum modelo adequado encontrado para o tipo de campo');
+      }
+
+      this.logger.debug(`🎯 Modelo selecionado: ${selectedModel} para tipo ${request.fieldType}`);
+
+      // Make validation request to server
+      const validationResponse = await this.makeServerValidationRequest(request, selectedModel);
+
+      const processingTime = Date.now() - startTime;
+
+      this.logger.info('✅ Decisão de validação concluída', {
+        fieldName: request.fieldName,
+        fieldType: request.fieldType,
+        modelUsed: validationResponse.model_used || selectedModel,
+        match: validationResponse.match,
+        confidence: validationResponse.confidence,
+        processingTime: `${processingTime}ms`,
+        fromCache: validationResponse.from_cache || false,
         requestId: this.requestCount
       });
 
-      // Build the prompt for the LLM
-      const prompt = this.buildValidationPrompt(request);
-      
-      // Get LLM response
-      const llmResponse = await this.queryLLM(prompt);
-      
-      // Parse the response into structured data
-      const decision = this.parseValidationResponse(llmResponse, request);
-      
+      // Convert server response to our format
+      return {
+        match: Boolean(validationResponse.match),
+        confidence: Math.min(1.0, Math.max(0.0, parseFloat(validationResponse.confidence?.toString() || '0.5'))),
+        reasoning: validationResponse.reasoning || 'Validação via sistema multi-modelo',
+        normalizedCsvValue: validationResponse.csv_value || request.csvValue,
+        normalizedWebValue: validationResponse.web_value || request.webValue,
+        issues: validationResponse.from_cache ? ['Resultado do cache inteligente'] : undefined
+      };
+
+    } catch (error) {
       const processingTime = Date.now() - startTime;
-      this.logger.debug('Validation decision completed', {
+      this.logger.error('💥 Falha ao fazer decisão de validação', {
         fieldName: request.fieldName,
-        match: decision.match,
-        confidence: decision.confidence,
-        processingTime
+        fieldType: request.fieldType,
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+        errorType: error instanceof Error ? error.constructor.name : 'UnknownError',
+        processingTime: `${processingTime}ms`,
+        requestId: this.requestCount,
+        timestamp: new Date().toISOString()
       });
 
-      return decision;
-
-    } catch (error) {
-      const processingTime = Date.now() - startTime;
-      this.logger.error('Failed to make validation decision', {
-        fieldName: request.fieldName,
-        error: error instanceof Error ? error.message : String(error),
-        processingTime
-      });
-
-      // Return a safe fallback decision
-      return {
-        match: false,
-        confidence: 0.0,
-        reasoning: `Error during validation: ${error instanceof Error ? error.message : String(error)}`,
-        normalizedCsvValue: request.csvValue,
-        normalizedWebValue: request.webValue,
-        issues: [`LLM processing error: ${error instanceof Error ? error.message : String(error)}`]
-      };
+             // Return fallback decision
+       return this.createFallbackDecision(request, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
   /**
-   * Build validation prompt for the LLM
+   * Make validation request to server
    */
-  private buildValidationPrompt(request: ValidationDecisionRequest): string {
-    const { csvValue, webValue, fieldType, fieldName } = request;
+  private async makeServerValidationRequest(request: ValidationDecisionRequest, preferredModel?: string): Promise<any> {
+    const validateUrl = `${this.serverUrl}/validate`;
 
-    return `You are a data validation expert. Compare these two values and determine if they represent the same information.
+    const payload = {
+      csv_value: request.csvValue,
+      web_value: request.webValue,
+      field_type: request.fieldType,
+      field_name: request.fieldName,
+      preferred_model: preferredModel
+    };
 
-Field Name: ${fieldName}
-Field Type: ${fieldType}
-CSV Value: "${csvValue}"
-Web Value: "${webValue}"
+    this.logger.debug('📤 Enviando requisição de validação', {
+      url: validateUrl,
+      fieldName: request.fieldName,
+      fieldType: request.fieldType,
+      preferredModel,
+      payloadSize: JSON.stringify(payload).length
+    });
 
-Consider:
-1. Exact matches
-2. Formatting differences (spaces, case, punctuation)
-3. Semantic equivalence (e.g., "John Doe" vs "Doe, John")
-4. Partial matches for longer text
-5. Data type-specific rules (dates, numbers, emails)
+    const response = await fetch(validateUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000) // 30 second timeout
+    });
 
-Respond in JSON format:
-{
-  "match": true|false,
-  "confidence": 0.0-1.0,
-  "reasoning": "Brief explanation",
-  "normalized_csv": "Normalized CSV value",
-  "normalized_web": "Normalized web value"
-}`;
+    if (!response.ok) {
+      throw new Error(`Servidor respondeu com ${response.status}: ${response.statusText}`);
+    }
+
+    const responseData = await response.json() as any;
+
+    this.logger.debug('📥 Resposta de validação recebida', {
+      status: response.status,
+      match: responseData.match,
+      confidence: responseData.confidence,
+      modelUsed: responseData.model_used,
+      fromCache: responseData.from_cache,
+      processingTime: responseData.processing_time_ms
+    });
+
+    return responseData;
   }
 
   /**
-   * Query the LLM with a prompt
+   * Create fallback decision when server fails
    */
-  private async queryLLM(prompt: string): Promise<LLMResponse> {
-    if (!this.llama) {
-      throw new Error('LLM not initialized');
-    }
-
-    const startTime = Date.now();
-
-    try {
-      const result = await this.llama.generate(prompt, {
-        max_tokens: this.settings.maxTokens,
-        temperature: this.settings.temperature,
-        stop: ['}', '\n\n---']
-      });
-
-      const processingTime = Date.now() - startTime;
-
-      return {
-        text: result.text,
-        confidence: 0.9, // TODO: Extract from model response
-        tokens: result.tokens || 0,
-        processingTime,
-        model: this.settings.modelPath.split('/').pop() || 'unknown'
-      };
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`LLM query failed: ${errorMessage}`);
-    }
-  }
-
-  /**
-   * Parse LLM response into structured validation decision
-   */
-  private parseValidationResponse(
-    llmResponse: LLMResponse, 
-    request: ValidationDecisionRequest
-  ): ValidationDecisionResponse {
-    const text = llmResponse.text;
-
-    try {
-      // Try to parse JSON response first
-      const parsed = JSON.parse(text);
-      
-      return {
-        match: Boolean(parsed.match),
-        confidence: Math.min(1.0, Math.max(0.0, parseFloat(parsed.confidence || 0.5))),
-        reasoning: parsed.reasoning || 'LLM validation decision',
-        normalizedCsvValue: parsed.normalized_csv || request.csvValue,
-        normalizedWebValue: parsed.normalized_web || request.webValue,
-        issues: parsed.issues ? [parsed.issues] : undefined
-      };
-
-    } catch (error) {
-      this.logger.warn('Failed to parse LLM JSON response, trying text parsing', { error });
-      
-      // Fallback to text parsing
-      return this.parseTextResponse(text, request);
-    }
-  }
-
-  /**
-   * Parse text-based LLM response
-   */
-  private parseTextResponse(text: string, request: ValidationDecisionRequest): ValidationDecisionResponse {
-    try {
-      const matchLine = text.match(/match['":]?\s*(true|false)/i);
-      const confidenceLine = text.match(/confidence['":]?\s*([\d.]+)/i);
-      const reasoningLine = text.match(/reasoning['":]?\s*['""]?(.+?)['""]?(?:\n|$|,)/i);
-
-      const match = matchLine?.[1]?.toLowerCase() === 'true';
-      const confidence = Math.min(1.0, Math.max(0.0, parseFloat(confidenceLine?.[1] || '0.5')));
-      const reasoning = reasoningLine?.[1]?.trim() || 'LLM validation decision';
-
-      return {
-        match,
-        confidence,
-        reasoning,
-        normalizedCsvValue: request.csvValue,
-        normalizedWebValue: request.webValue
-      };
-
-    } catch (error) {
-      this.logger.warn('Failed to parse LLM response, using fallback', { error });
-      return this.getFallbackDecision(request);
-    }
-  }
-
-  /**
-   * Get fallback decision when LLM fails
-   */
-  private getFallbackDecision(request: ValidationDecisionRequest): ValidationDecisionResponse {
+  private createFallbackDecision(request: ValidationDecisionRequest, error: Error): ValidationDecisionResponse {
     // Simple string comparison fallback
     const csvStr = String(request.csvValue).toLowerCase().trim();
     const webStr = String(request.webValue).toLowerCase().trim();
     const match = csvStr === webStr;
 
+    this.logger.warn('🔄 Usando decisão de fallback local', {
+      fieldName: request.fieldName,
+      csvValue: csvStr.substring(0, 30),
+      webValue: webStr.substring(0, 30),
+      match,
+      error: error.message
+    });
+
     return {
       match,
       confidence: match ? 0.6 : 0.2, // Lower confidence for fallback
-      reasoning: 'Fallback string comparison (LLM unavailable)',
+      reasoning: `Fallback local (servidor indisponível): ${error.message}`,
       normalizedCsvValue: csvStr,
       normalizedWebValue: webStr,
-      issues: ['LLM engine unavailable']
+      issues: [`Sistema LLM indisponível: ${error.message}`]
     };
+  }
+
+  /**
+   * Get system metrics and performance
+   */
+  async getMetrics(): Promise<any> {
+    try {
+      const metricsUrl = `${this.serverUrl}/metrics`;
+      const response = await fetch(metricsUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro ao obter métricas: ${response.status}`);
+      }
+
+      const metrics = await response.json() as any;
+
+      // Add local engine metrics
+      metrics.local_engine = {
+        initialized: this.initialized,
+        request_count: this.requestCount,
+        learning_enabled: this.learningEnabled,
+        cache_enabled: this.cacheEnabled,
+        available_models: this.availableModels.length,
+        field_type_mappings: Object.keys(this.fieldTypeMapping).length
+      };
+
+      return metrics;
+    } catch (error) {
+      this.logger.warn('⚠️ Não foi possível obter métricas do servidor', {
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+
+      return {
+        local_engine: {
+          initialized: this.initialized,
+          request_count: this.requestCount,
+          learning_enabled: this.learningEnabled,
+          cache_enabled: this.cacheEnabled,
+          server_available: false
+        }
+      };
+    }
+  }
+
+  /**
+   * Get available models information
+   */
+  getAvailableModels(): ModelInfo[] {
+    return this.availableModels;
+  }
+
+  /**
+   * Get field type to model mappings
+   */
+  getFieldTypeMapping(): Record<string, string> {
+    return this.fieldTypeMapping;
+  }
+
+  /**
+   * Generate text using the optimal model
+   */
+  async generate(prompt: string, maxTokens: number = 100, fieldType: string = 'text'): Promise<string> {
+    if (!this.initialized) {
+      throw new Error('Sistema LLM não inicializado. Chame initialize() primeiro.');
+    }
+
+    try {
+      // Use validation endpoint with a simple comparison to generate text
+      const response = await this.makeServerValidationRequest({
+        csvValue: prompt,
+        webValue: '',
+        fieldType,
+        fieldName: 'text_generation'
+      });
+
+      return response.reasoning || 'Texto gerado pelo sistema multi-modelo';
+    } catch (error) {
+      this.logger.error('❌ Falha ao gerar texto', {
+        error: error instanceof Error ? error.message : 'Erro desconhecido',
+        prompt: prompt.substring(0, 50),
+        fieldType
+      });
+      throw new Error(`Geração de texto falhou: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  }
+
+  /**
+   * Batch validation decisions for multiple fields
+   */
+  async batchValidationDecisions(requests: ValidationDecisionRequest[]): Promise<ValidationDecisionResponse[]> {
+    const results: ValidationDecisionResponse[] = [];
+
+    this.logger.info('📦 Processando lote de validações', {
+      batchSize: requests.length,
+      timestamp: new Date().toISOString()
+    });
+
+    // Group requests by field type for optimal model usage
+    const requestsByType = new Map<string, ValidationDecisionRequest[]>();
+    requests.forEach(request => {
+      const fieldType = request.fieldType;
+      if (!requestsByType.has(fieldType)) {
+        requestsByType.set(fieldType, []);
+      }
+      requestsByType.get(fieldType)!.push(request);
+    });
+
+    // Process each group with concurrency control
+    const concurrency = 3;
+    for (const [fieldType, groupRequests] of requestsByType) {
+      this.logger.debug(`🔄 Processando grupo ${fieldType}: ${groupRequests.length} requisições`);
+
+      for (let i = 0; i < groupRequests.length; i += concurrency) {
+        const batch = groupRequests.slice(i, i + concurrency);
+        const batchResults = await Promise.all(
+          batch.map(request => this.makeValidationDecision(request))
+        );
+        results.push(...batchResults);
+      }
+    }
+
+    this.logger.info('✅ Lote de validações concluído', {
+      totalRequests: requests.length,
+      successfulResults: results.length,
+      averageConfidence: results.reduce((sum, r) => sum + r.confidence, 0) / results.length
+    });
+
+    return results;
+  }
+
+  /**
+   * Check if the engine is initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * Close LLM engine and cleanup resources
+   */
+  async close(): Promise<void> {
+    return this.cleanup();
   }
 
   /**
@@ -382,10 +532,13 @@ Respond in JSON format:
   async cleanup(): Promise<void> {
     try {
       this.initialized = false;
-      this.llama = null;
-      this.logger.info('LLM Engine cleaned up');
+      this.availableModels = [];
+      this.fieldTypeMapping = {};
+      this.logger.info('🧹 Sistema Multi-Modelo LLM limpo');
     } catch (error) {
-      this.logger.error('Error during LLM cleanup', error);
+      this.logger.error('❌ Erro durante limpeza do sistema LLM', {
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
     }
   }
 
@@ -396,8 +549,14 @@ Respond in JSON format:
     return {
       initialized: this.initialized,
       requestCount: this.requestCount,
-      modelPath: this.settings.modelPath,
+      enableFallback: this.enableFallback,
+      learningEnabled: this.learningEnabled,
+      cacheEnabled: this.cacheEnabled,
+      serverUrl: this.serverUrl,
+      availableModels: this.availableModels.length,
+      fieldTypeMappings: Object.keys(this.fieldTypeMapping).length,
       settings: {
+        modelPath: this.settings.modelPath,
         contextSize: this.settings.contextSize,
         threads: this.settings.threads,
         temperature: this.settings.temperature
