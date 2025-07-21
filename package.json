@@ -13,12 +13,17 @@
     "test:integration": "jest tests/integration",
     "test:e2e": "jest tests/e2e",
     "test:watch": "jest --watch",
+    "test:setup": "./scripts/setup-test-env.sh",
+    "test:run": "./scripts/run-tests.sh",
+    "test:coverage": "./scripts/run-tests.sh --all --coverage",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "clean": "rimraf dist",
     "validate": "npm run lint && npm run test:unit",
     "crew:install": "pip install -r requirements.txt",
-    "models:download": "node scripts/download-models.js"
+    "models:download": "node scripts/download-models.js",
+    "config:validate": "tsx scripts/validate-config.ts",
+    "config:convert": "tsx scripts/convert-config-format.ts"
   },
   "keywords": [
     "automation",

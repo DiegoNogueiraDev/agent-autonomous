@@ -1,0 +1,132 @@
+navigation_task:
+  description: >
+    Navigate to the target URL for the given CSV row and extract data from
+    the  web interface. Use DOM queries first for precise data extraction. If
+    DOM  extraction fails for any field, capture a high-quality screenshot
+    for  OCR fallback processing.
+
+    Input: CSV row data with target URL and field mappings Steps: 1. Navigate to
+    the calculated URL for this specific row 2. Wait for page to fully load and
+    all dynamic content to render 3. Extract data for each mapped field using
+    DOM selectors 4. For failed extractions, capture targeted screenshots of
+    relevant areas 5. Return structured data with extraction method used for
+    each field
+  expected_output: >
+    A structured object containing: - extracted_data: Dictionary mapping CSV
+    fields to extracted web values - extraction_methods: Method used for each
+    field (dom/screenshot) - screenshots: Base64 encoded screenshots for OCR
+    processing - page_metadata: URL, timestamp, page title, load time -
+    extraction_confidence: Initial confidence score for DOM extractions -
+    errors: Any errors encountered during navigation or extraction
+  agent: browser_agent
+  context: []
+  tools:
+    - playwright_navigator
+    - dom_extractor
+    - screenshot_capture
+ocr_processing_task:
+  description: >
+    Process screenshots captured during navigation to extract text using
+    OCR  when DOM extraction failed. Apply image preprocessing to improve
+    accuracy  and clean the extracted text for comparison with CSV data.
+
+    Input: Screenshots and metadata from navigation task Steps: 1. Apply image
+    preprocessing (contrast, sharpening, noise reduction) 2. Perform OCR text
+    extraction using Tesseract 3. Clean and normalize extracted text 4. Map
+    extracted text back to corresponding CSV fields 5. Calculate OCR confidence
+    scores
+  expected_output: >
+    A dictionary containing: - ocr_extractions: Text extracted from each
+    screenshot region - confidence_scores: OCR confidence for each extraction -
+    preprocessing_applied: List of preprocessing steps used -
+    extraction_regions: Coordinates of text regions found - normalized_text:
+    Cleaned and normalized text for comparison - processing_time: Time taken for
+    OCR processing
+  agent: ocr_agent
+  context:
+    - navigation_task
+  tools:
+    - tesseract_ocr
+    - image_preprocessor
+    - text_cleaner
+validation_task:
+  description: >
+    Compare CSV data with extracted web data (from DOM and/or OCR) to
+    determine  if they match. Use fuzzy matching for slight variations and
+    provide detailed  reasoning for validation decisions. Calculate confidence
+    scores for each field.
+
+    Input: CSV row data, extracted web data, and OCR results Steps: 1. Normalize
+    both CSV and web data for comparison 2. Perform exact matching where
+    possible 3. Apply fuzzy matching for slight variations (formatting, spacing)
+    4. Use LLM reasoning for complex comparisons 5. Calculate field-level and
+    overall confidence scores 6. Provide detailed reasoning for each validation
+    decision
+  expected_output: >
+    A comprehensive validation result containing: - field_validations: List of
+    field-by-field comparison results - overall_match: Boolean indicating if the
+    row validates - overall_confidence: Aggregate confidence score (0-1) -
+    validation_reasoning: Detailed explanation of decisions - discrepancies:
+    List of identified mismatches with details - fuzzy_matches: Fields that
+    matched using fuzzy logic - recommendations: Suggestions for manual review
+    if needed
+  agent: decision_agent
+  context:
+    - navigation_task
+    - ocr_processing_task
+  tools:
+    - fuzzy_string_matcher
+    - confidence_calculator
+    - data_normalizer
+evidence_collection_task:
+  description: >
+    Collect and organize all evidence from the validation process
+    including  screenshots, extracted data, validation decisions, and metadata.
+    Store  evidence in structured format for audit trails and future reference.
+
+    Input: All data from previous tasks (navigation, OCR, validation) Steps: 1.
+    Collect screenshots and DOM snapshots 2. Archive extracted data and
+    validation results 3. Generate evidence metadata (timestamps, versions,
+    checksums) 4. Compress and store evidence files 5. Create evidence index for
+    quick retrieval
+  expected_output: >
+    Evidence package containing: - evidence_files: Paths to stored screenshots
+    and data files - evidence_metadata: Timestamps, file sizes, checksums -
+    validation_audit_trail: Complete record of validation process -
+    evidence_index: Structured index for evidence retrieval - storage_location:
+    Path where evidence is permanently stored - retention_info: Evidence
+    retention and cleanup schedule
+  agent: evidence_agent
+  context:
+    - navigation_task
+    - ocr_processing_task
+    - validation_task
+  tools:
+    - evidence_collector
+    - file_manager
+    - compression_tool
+row_processing_workflow:
+  description: >
+    Complete end-to-end processing workflow for a single CSV row.
+    Coordinate  all agents to navigate, extract, validate, and collect evidence.
+    Handle  errors and implement retry logic for failed operations.
+
+    Input: Single CSV row with configuration and field mappings Steps: 1.
+    Initiate navigation and data extraction 2. Process any screenshots through
+    OCR if needed 3. Perform validation comparison and reasoning 4. Collect and
+    store all evidence 5. Handle errors and retry failed operations 6. Generate
+    summary report for the row
+  expected_output: >
+    Complete row processing result: - row_id: Unique identifier for the
+    processed row - processing_status: success/failure/partial -
+    validation_result: Complete validation outcome - evidence_summary: Summary
+    of collected evidence - processing_time: Total time taken for row processing
+    - error_log: Any errors encountered and how they were handled -
+    retry_attempts: Number of retries performed - final_confidence: Overall
+    confidence in validation result
+  agent: coordinator_agent
+  context: []
+  tools:
+    - workflow_manager
+    - error_handler
+    - retry_logic

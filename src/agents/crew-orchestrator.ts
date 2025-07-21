@@ -1,15 +1,15 @@
-import { Logger } from '../core/logger.js';
 import { BrowserAgent } from '../automation/browser-agent.js';
+import { Logger } from '../core/logger.js';
+import { EvidenceCollector } from '../evidence/evidence-collector.js';
 import { LocalLLMEngine } from '../llm/local-llm-engine.js';
 import { OCREngine } from '../ocr/ocr-engine.js';
-import { EvidenceCollector } from '../evidence/evidence-collector.js';
-import type { 
-  CSVRow, 
-  FieldMapping, 
-  ValidationConfig,
-  AgentTask,
-  CrewValidationResult,
-  CrewConfig 
+import type {
+    AgentTask,
+    CSVRow,
+    CrewConfig,
+    CrewValidationResult,
+    FieldMapping,
+    ValidationConfig
 } from '../types/index.js';
 
 export interface AgentCapability {
@@ -35,7 +35,7 @@ export interface CrewAgent {
   };
 }
 
-export type AgentRole = 
+export type AgentRole =
   | 'navigator'     // Especialista em navegação web
   | 'extractor'     // Especialista em extração de dados
   | 'validator'     // Especialista em validação via LLM
@@ -49,7 +49,7 @@ export class CrewOrchestrator {
   private agents: Map<string, CrewAgent> = new Map();
   private taskQueue: AgentTask[] = [];
   private activeTask: AgentTask | null = null;
-  
+
   // Core engines
   private browserAgent: BrowserAgent | null = null;
   private llmEngine: LocalLLMEngine | null = null;
@@ -64,6 +64,8 @@ export class CrewOrchestrator {
     averageTaskTime: 0,
     agentUtilization: new Map<string, number>()
   };
+
+  private initialized = false;
 
   constructor(config: CrewConfig) {
     // Validate configuration
@@ -292,8 +294,8 @@ export class CrewOrchestrator {
     // Create default instances if not provided (for testing)
     if (!this.browserAgent) {
       this.browserAgent = new BrowserAgent({
-        settings: { 
-          headless: true, 
+        settings: {
+          headless: true,
           viewport: { width: 1280, height: 720 },
           timeout: 30000
         },
@@ -308,7 +310,7 @@ export class CrewOrchestrator {
           modelPath: './models/llama3-8b-instruct.Q4_K_M.gguf',
           fallbackModelPath: './models/phi-3-mini-4k-instruct.Q4_K_M.gguf',
           contextSize: 2048,
-          threads: 4,
+          threads: 3,
           batchSize: 128,
           gpuLayers: 0,
           temperature: 0.1,
@@ -318,6 +320,28 @@ export class CrewOrchestrator {
       await this.llmEngine.initialize();
     }
 
+    if (!this.evidenceCollector) {
+      // Import EvidenceCollector dynamically to avoid circular dependencies
+      const { EvidenceCollector } = await import('../evidence/evidence-collector.js');
+      this.evidenceCollector = new EvidenceCollector({
+        settings: {
+          retentionDays: 30,
+          screenshotEnabled: true,
+          domSnapshotEnabled: true,
+          compressionEnabled: true,
+          includeInReports: true
+        },
+        baseOutputPath: './data/evidence'
+      });
+      if (this.evidenceCollector) {
+        await this.evidenceCollector.initialize();
+      }
+    }
+
+    // Initialize agents
+    this.initializeAgents();
+    this.initialized = true;
+
     this.logger.info('CrewAI orchestrator initialized with core engines');
   }
 
@@ -325,7 +349,7 @@ export class CrewOrchestrator {
    * Check if orchestrator is initialized
    */
   isInitialized(): boolean {
-    return this.browserAgent !== null && this.llmEngine !== null;
+    return this.initialized && this.browserAgent !== null && this.llmEngine !== null;
   }
 
   /**
@@ -340,7 +364,7 @@ export class CrewOrchestrator {
    */
   getAgentStatus(): Record<string, any> {
     const status: Record<string, any> = {};
-    
+
     for (const [, agent] of this.agents) {
       status[agent.role] = {
         id: agent.id,
@@ -407,7 +431,7 @@ export class CrewOrchestrator {
     } catch (error) {
       this.metrics.failedTasks++;
       this.logger.error('Multi-agent validation failed', error);
-      
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -435,14 +459,30 @@ export class CrewOrchestrator {
     let retryCount = 0;
     const maxRetries = this.config.retryAttempts || 2;
 
-    while (retryCount <= maxRetries) {
+    // Interpolate URL template with CSV data
+    const interpolatedUrl = this.interpolateUrl(config.targetUrl, csvRow);
+
+        while (retryCount < maxRetries) {
       try {
-        const result = await this.browserAgent.navigateToUrl(config.targetUrl, csvRow);
+                const result = await this.browserAgent.navigateToUrl(interpolatedUrl, csvRow);
+
+        // Check if navigation failed at browser level
+        if (!result.success || (result.errors && result.errors.length > 0)) {
+          const errorMsg = result.errors?.[0] || 'Navigation failed';
+          throw new Error(errorMsg);
+        }
+
         this.setAgentIdle(navigator.id, true);
-        
+
+        // Navigation completed successfully
+        // Update metrics
+        this.metrics.totalTasks++;
+        this.metrics.completedTasks++;
+        this.metrics.averageTaskTime = ((this.metrics.averageTaskTime * (this.metrics.completedTasks - 1)) + (result.loadTime || 1000)) / this.metrics.completedTasks;
+
         return {
           success: true,
-          url: result.url,
+          url: interpolatedUrl, // Return interpolated URL, not final page URL
           loadTime: result.loadTime || 1000,
           agentId: 'navigator',
           status: (result as any).status || 200,
@@ -450,22 +490,77 @@ export class CrewOrchestrator {
         };
       } catch (error) {
         retryCount++;
-        if (retryCount > maxRetries) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        this.logger.error('Navigation failed', {
+          error: {
+            error: errorMessage,
+            url: interpolatedUrl,
+            loadTime: Date.now() - Date.now()
+          }
+        });
+
+                if (retryCount >= maxRetries) {
           this.setAgentIdle(navigator.id, false);
-          
+          this.metrics.totalTasks++;
+          this.metrics.failedTasks++;
           return {
             success: false,
-            error: error instanceof Error ? error.message : 'Navigation failed',
-            agentId: 'navigator',
+            url: interpolatedUrl,
+            error: errorMessage,
             retryCount,
-            url: config.targetUrl
+            agentId: 'navigator'
           };
         }
-        
+
         // Wait before retry
         await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
       }
     }
+
+    this.setAgentIdle(navigator.id, false);
+    return {
+      success: false,
+      url: interpolatedUrl,
+      error: 'Max retries exceeded',
+      retryCount,
+      agentId: 'navigator'
+    };
+  }
+
+  /**
+   * Interpolate URL template with CSV data
+   */
+  private interpolateUrl(url: string, rowData?: CSVRow): string {
+    if (!rowData) return url;
+
+    let interpolatedUrl = url;
+
+    // Replace all placeholders with actual values
+    interpolatedUrl = interpolatedUrl.replace(/{([^}]+)}/g, (match, key) => {
+      const normalizedKey = key.toLowerCase();
+
+      // Try exact key first
+      if (rowData[key] !== undefined) {
+        return encodeURIComponent(String(rowData[key]));
+      }
+
+      // Try normalized key
+      if (rowData[normalizedKey] !== undefined) {
+        return encodeURIComponent(String(rowData[normalizedKey]));
+      }
+
+      // Try case-insensitive search
+      for (const [csvKey, csvValue] of Object.entries(rowData)) {
+        if (csvKey.toLowerCase() === normalizedKey) {
+          return encodeURIComponent(String(csvValue));
+        }
+      }
+
+      // Return original placeholder if no match found
+      return match;
+    });
+
+    return interpolatedUrl;
   }
 
   /**
@@ -486,16 +581,18 @@ export class CrewOrchestrator {
     try {
       const results = await this.browserAgent.extractWebData(fieldMappings);
       this.setAgentIdle(extractor.id, true);
-      
+
       const extractedData: Record<string, any> = {};
       const warnings: string[] = [];
-      
+
       fieldMappings.forEach(mapping => {
         const extractedValue = results.domData?.[mapping.csvField];
-        if (extractedValue !== undefined) {
+        if (extractedValue !== undefined && extractedValue !== null && extractedValue !== '') {
           extractedData[mapping.csvField] = extractedValue;
         } else {
-          warnings.push(`Failed to extract data for field: ${mapping.csvField}`);
+          // Add extracted data as null but also generate warning
+          extractedData[mapping.csvField] = null;
+          warnings.push(`Failed to extract data for field: ${mapping.csvField} using selector: ${mapping.webSelector}`);
         }
       });
 
@@ -509,7 +606,7 @@ export class CrewOrchestrator {
       };
     } catch (error) {
       this.setAgentIdle(extractor.id, false);
-      
+
       return {
         success: true,
         extractedData: {},
@@ -588,7 +685,7 @@ export class CrewOrchestrator {
 
       const validationResults = await Promise.all(validationPromises);
       this.setAgentIdle(validator.id, true);
-      
+
       return {
         success: true,
         validationResults,
@@ -597,7 +694,7 @@ export class CrewOrchestrator {
       };
     } catch (error) {
       this.setAgentIdle(validator.id, false);
-      
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Validation failed',
@@ -626,7 +723,7 @@ export class CrewOrchestrator {
       // Evidence collection would typically be handled by the existing evidence collector
       const evidenceId = `ev_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
       const collectedFiles = 1 + (extractionResults.screenshots?.length || 0);
-      
+
       const result = {
         success: true,
         evidenceId,
@@ -643,7 +740,7 @@ export class CrewOrchestrator {
       return result;
     } catch (error) {
       this.setAgentIdle(evidenceAgent.id, false);
-      
+
       return {
         success: true,
         evidenceId: `ev_error_${Date.now()}`,
@@ -685,19 +782,19 @@ export class CrewOrchestrator {
     const agent = this.agents.get(agentId);
     if (agent && agent.currentTask) {
       const taskDuration = Date.now() - agent.performance.lastActivity.getTime();
-      
+
       agent.status = 'idle';
       agent.performance.tasksCompleted++;
-      agent.performance.averageProcessingTime = 
+      agent.performance.averageProcessingTime =
         (agent.performance.averageProcessingTime + taskDuration) / 2;
-      
+
       if (success) {
-        agent.performance.successRate = 
-          (agent.performance.successRate * (agent.performance.tasksCompleted - 1) + 1) / 
+        agent.performance.successRate =
+          (agent.performance.successRate * (agent.performance.tasksCompleted - 1) + 1) /
           agent.performance.tasksCompleted;
       } else {
-        agent.performance.successRate = 
-          (agent.performance.successRate * (agent.performance.tasksCompleted - 1)) / 
+        agent.performance.successRate =
+          (agent.performance.successRate * (agent.performance.tasksCompleted - 1)) /
           agent.performance.tasksCompleted;
       }
 
@@ -709,8 +806,8 @@ export class CrewOrchestrator {
    * Update global metrics
    */
   private updateMetrics(processingTime: number): void {
-    this.metrics.averageTaskTime = 
-      (this.metrics.averageTaskTime * (this.metrics.completedTasks - 1) + processingTime) / 
+    this.metrics.averageTaskTime =
+      (this.metrics.averageTaskTime * (this.metrics.completedTasks - 1) + processingTime) /
       this.metrics.completedTasks;
   }
 
@@ -719,7 +816,7 @@ export class CrewOrchestrator {
    */
   private getAgentUtilization(): Record<string, any> {
     const utilization: Record<string, any> = {};
-    
+
     for (const [agentId, agent] of this.agents) {
       utilization[agentId] = {
         role: agent.role,
@@ -738,7 +835,7 @@ export class CrewOrchestrator {
    */
   getCrewStatistics(): any {
     const agentsByRole = new Map<AgentRole, CrewAgent[]>();
-    
+
     for (const agent of this.agents.values()) {
       if (!agentsByRole.has(agent.role)) {
         agentsByRole.set(agent.role, []);
@@ -778,8 +875,8 @@ export class CrewOrchestrator {
    * Get performance metrics
    */
   getPerformanceMetrics(): any {
-    const successRate = this.metrics.totalTasks > 0 
-      ? this.metrics.completedTasks / this.metrics.totalTasks 
+    const successRate = this.metrics.totalTasks > 0
+      ? this.metrics.completedTasks / this.metrics.totalTasks
       : 1;
 
     const agentUtilization: Record<string, any> = {};
@@ -807,7 +904,7 @@ export class CrewOrchestrator {
    */
   getCircuitBreakerStatus(): Record<string, any> {
     const status: Record<string, any> = {};
-    
+
     for (const [, agent] of this.agents) {
       const failureRate = 1 - agent.performance.successRate;
       status[agent.role] = {
@@ -837,7 +934,7 @@ export class CrewOrchestrator {
    */
   async cleanup(): Promise<void> {
     await this.shutdown();
-    
+
     // Cleanup browser agent
     if (this.browserAgent && typeof this.browserAgent.cleanup === 'function') {
       await this.browserAgent.cleanup();
@@ -847,6 +944,12 @@ export class CrewOrchestrator {
     if (this.llmEngine && typeof (this.llmEngine as any).cleanup === 'function') {
       await (this.llmEngine as any).cleanup();
     }
+
+    // Reset initialization state
+    this.initialized = false;
+    this.browserAgent = null;
+    this.llmEngine = null;
+    this.evidenceCollector = null;
   }
 
   /**
@@ -854,7 +957,7 @@ export class CrewOrchestrator {
    */
   async shutdown(): Promise<void> {
     this.logger.info('Shutting down CrewAI orchestrator');
-    
+
     // Set all agents to offline
     for (const agent of this.agents.values()) {
       agent.status = 'offline';

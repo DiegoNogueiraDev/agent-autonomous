@@ -34,5 +34,8 @@ export default {
     'text',
     'lcov',
     'html'
-  ]
+  ],
+  globalSetup: '<rootDir>/tests/setup.ts',
+  testTimeout: 30000,
+  setupFilesAfterEnv: ['<rootDir>/tests/jest.setup.ts']
 };

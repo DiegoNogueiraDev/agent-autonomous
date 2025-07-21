@@ -1,0 +1,31 @@
+target_url: https://pt.wikipedia.org/wiki/{titulo}
+field_mappings:
+  - csv_field: titulo
+    web_selector: h1#firstHeading
+    field_type: invalid_type
+    required: true
+    validation_strategy: dom_extraction
+  - csv_field: data
+    web_selector: .infobox-data
+    required: true
+    validation_strategy: dom_extraction
+  - csv_field: fato
+    web_selector: p
+    field_type: text
+    required: true
+    validation_strategy: invalid_strategy
+validation_rules:
+  confidence:
+    minimum_overall: 1.5
+    minimum_field: 0.6
+    ocr_threshold: 0.6
+    fuzzy_match_threshold: 0.75
+  fuzzy_matching:
+    enabled: invalid_boolean
+    algorithms:
+      - invalid_algorithm
+      - jaro_winkler
+    string_similarity_threshold: 0.75
+    number_tolerance: 0.001
+    case_insensitive: true
+    ignore_whitespace: true

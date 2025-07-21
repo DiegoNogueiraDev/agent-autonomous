@@ -1,10 +1,10 @@
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
-import { TaskmasterController } from '../../src/core/taskmaster';
-import { CrewOrchestrator } from '../../src/agents/crew-orchestrator';
-import type { ValidationConfig, CrewConfig } from '../../src/types/index';
+import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import fs from 'fs/promises';
-import path from 'path';
 import os from 'os';
+import path from 'path';
+import { CrewOrchestrator } from '../../src/agents/crew-orchestrator';
+import { TaskmasterController } from '../../src/core/taskmaster';
+import type { CrewConfig } from '../../src/types/index';
 
 describe('E2E Validation Workflow Integration', () => {
   let taskmaster: TaskmasterController;
@@ -91,7 +91,7 @@ evidence:
 
     // Initialize components
     taskmaster = new TaskmasterController();
-    
+
     const crewConfig: CrewConfig = {
       maxConcurrentTasks: 2,
       taskTimeout: 15000,
@@ -110,7 +110,7 @@ evidence:
     if (crewOrchestrator && typeof crewOrchestrator.cleanup === 'function') {
       await crewOrchestrator.cleanup();
     }
-    
+
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
     } catch (error) {
@@ -121,10 +121,10 @@ evidence:
   describe('Complete Taskmaster Workflow', () => {
     test('should execute complete CSV validation workflow', async () => {
       const outputPath = path.join(tempDir, 'output');
-      
+
       const result = await taskmaster.validateData({
         inputPath: sampleCsvPath,
-        configPath: sampleConfigPath,
+        configPath: 'config/test-config.snake.yaml',
         outputPath,
         formats: ['json', 'html']
       });
@@ -133,14 +133,14 @@ evidence:
       expect(result).toBeDefined();
       expect(result.summary).toBeDefined();
       expect(result.results).toBeDefined();
-      
+
       // Verify processing metrics
       expect(result.summary.totalRows).toBe(3);
       expect(result.summary.processedRows).toBe(3);
       expect(result.summary.processingTime).toBeGreaterThan(0);
       expect(result.summary.averageConfidence).toBeGreaterThanOrEqual(0);
       expect(result.summary.averageConfidence).toBeLessThanOrEqual(1);
-      
+
       // Verify each row was processed
       expect(result.results).toHaveLength(3);
       result.results.forEach((row, index) => {
@@ -162,23 +162,23 @@ evidence:
 Herman Melville,herman@melville.com,1,Moby-Dick
 ,invalid-email-format,2,
 Charles Dickens,charles@dickens.com,3,Great Expectations`;
-      
+
       const mixedCsvPath = path.join(tempDir, 'mixed.csv');
       await fs.writeFile(mixedCsvPath, mixedCsvContent);
 
       const result = await taskmaster.validateData({
         inputPath: mixedCsvPath,
-        configPath: sampleConfigPath,
+        configPath: 'config/test-config.snake.yaml',
         outputPath: path.join(tempDir, 'output'),
         formats: ['json']
       });
 
       expect(result.summary.totalRows).toBe(3);
       expect(result.summary.processedRows).toBe(3);
-      
+
       // Should still complete all rows despite data issues
       expect(result.results).toHaveLength(3);
-      
+
       // Error rate should reflect data quality issues
       expect(result.summary.errorRate).toBeGreaterThanOrEqual(0);
     }, 45000);
@@ -186,7 +186,7 @@ Charles Dickens,charles@dickens.com,3,Great Expectations`;
     test('should respect processing limits', async () => {
       const result = await taskmaster.validateData({
         inputPath: sampleCsvPath,
-        configPath: sampleConfigPath,
+        configPath: 'config/test-config.snake.yaml',
         outputPath: path.join(tempDir, 'output'),
         formats: ['json'],
         maxRows: 2
@@ -200,7 +200,7 @@ Charles Dickens,charles@dickens.com,3,Great Expectations`;
   describe('CrewAI Multi-Agent Integration', () => {
     test('should orchestrate multi-agent validation workflow', async () => {
       await crewOrchestrator.initialize();
-      
+
       const mockCsvRow = {
         name: 'Herman Melville',
         title: 'Moby-Dick',
@@ -268,7 +268,7 @@ Charles Dickens,charles@dickens.com,3,Great Expectations`;
       }
 
       const results = await Promise.all(tasks);
-      
+
       // All tasks should complete successfully
       expect(results).toHaveLength(3);
       results.forEach(result => {
@@ -286,7 +286,7 @@ Charles Dickens,charles@dickens.com,3,Great Expectations`;
       await crewOrchestrator.initialize();
 
       const healthStatus = await crewOrchestrator.checkAgentHealth();
-      
+
       expect(healthStatus.overall).toBe(true);
       expect(healthStatus.agents).toBeDefined();
       expect(healthStatus.agents.navigator).toBe(true);
@@ -330,7 +330,7 @@ performance:
 "Herman Melville",herman@melville.com,1,"Moby-Dick"
 "Unclosed quote,invalid@email,2,Missing quote
 Charles Dickens,charles@dickens.com,3,Great Expectations`;
-      
+
       const malformedCsvPath = path.join(tempDir, 'malformed.csv');
       await fs.writeFile(malformedCsvPath, malformedCsvContent);
 
@@ -350,7 +350,7 @@ Charles Dickens,charles@dickens.com,3,Great Expectations`;
   describe('Evidence and Reporting Integration', () => {
     test('should generate comprehensive evidence and reports', async () => {
       const outputPath = path.join(tempDir, 'output');
-      
+
       const result = await taskmaster.validateData({
         inputPath: sampleCsvPath,
         configPath: sampleConfigPath,
@@ -385,7 +385,7 @@ Charles Dickens,charles@dickens.com,3,Great Expectations`;
       // Validate JSON report structure
       const jsonFiles = outputFiles.filter(f => f.endsWith('.json'));
       const jsonContent = JSON.parse(await fs.readFile(path.join(outputPath, jsonFiles[0]), 'utf-8'));
-      
+
       expect(jsonContent.summary).toBeDefined();
       expect(jsonContent.results).toBeDefined();
       expect(jsonContent.metadata).toBeDefined();
@@ -400,12 +400,12 @@ Charles Dickens,charles@dickens.com,3,Great Expectations`;
       for (let i = 1; i <= 20; i++) {
         largeCsvContent += `User ${i},user${i}@example.com,${i},Title ${i}\n`;
       }
-      
+
       const largeCsvPath = path.join(tempDir, 'large.csv');
       await fs.writeFile(largeCsvPath, largeCsvContent);
 
       const startTime = Date.now();
-      
+
       const result = await taskmaster.validateData({
         inputPath: largeCsvPath,
         configPath: sampleConfigPath,
@@ -417,11 +417,11 @@ Charles Dickens,charles@dickens.com,3,Great Expectations`;
 
       expect(result.summary.totalRows).toBe(20);
       expect(result.summary.processedRows).toBe(20);
-      
+
       // Should process at reasonable speed (aim for >1 row per 3 seconds)
       const avgTimePerRow = processingTime / 20;
       expect(avgTimePerRow).toBeLessThan(5000); // 5 seconds per row max
-      
+
       // Verify performance metrics
       expect(result.summary.performance.rowsPerSecond).toBeGreaterThan(0);
       expect(result.summary.performance.averageRowTime).toBeGreaterThan(0);
@@ -448,12 +448,12 @@ performance:
       for (let i = 1; i <= 9; i++) {
         mediumCsvContent += `User ${i},user${i}@example.com,${i},Title ${i}\n`;
       }
-      
+
       const mediumCsvPath = path.join(tempDir, 'medium.csv');
       await fs.writeFile(mediumCsvPath, mediumCsvContent);
 
       const startTime = Date.now();
-      
+
       const result = await taskmaster.validateData({
         inputPath: mediumCsvPath,
         configPath: parallelConfigPath,
@@ -465,7 +465,7 @@ performance:
 
       expect(result.summary.totalRows).toBe(9);
       expect(result.summary.processedRows).toBe(9);
-      
+
       // Parallel processing should be faster than sequential
       // 9 rows with 3 parallel workers should be ~3x faster than sequential
       expect(processingTime).toBeLessThan(30000); // Should complete within 30 seconds
@@ -502,12 +502,12 @@ validationRules:
 
       expect(result.summary.totalRows).toBe(3);
       expect(result.summary.processedRows).toBe(3);
-      
+
       // Verify that different validation strategies were applied
       result.results.forEach(row => {
         expect(row.validations).toBeDefined();
         expect(row.validations.length).toBeGreaterThan(0);
-        
+
         row.validations.forEach(validation => {
           expect(['dom_extraction', 'llm_validation', 'hybrid']).toContain(validation.method);
         });

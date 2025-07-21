@@ -1,9 +1,9 @@
-import { constants } from 'fs';
-import { access, readFile, writeFile } from 'fs/promises';
+import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { z } from 'zod';
 import type { ValidationConfig } from '../types/index.js';
+import { SnakeCaseValidationConfig, convertSnakeToCamel } from '../types/snake-case.js';
 
 // Validation schemas for configuration - updated to match YAML structure
 const FieldMappingSchema = z.object({
@@ -187,41 +187,69 @@ const InternalValidationConfigSchema = z.object({
 
 export class ConfigManager {
   /**
-   * Load and validate configuration from YAML file with snake_case to camelCase conversion
+   * Carrega e valida um arquivo de configuração de validação
    */
   async loadValidationConfig(configPath: string): Promise<ValidationConfig> {
     try {
-      // Check if file exists
-      await access(configPath, constants.F_OK);
-
       const configContent = await readFile(configPath, 'utf-8');
-      const rawConfig = parseYaml(configContent);
 
-      // Convert snake_case to camelCase
-      const normalizedConfig = this.normalizeConfigKeys(rawConfig);
+      // Interpolate environment variables
+      const interpolatedContent = this.interpolateEnvVars(configContent);
 
-      // Validate configuration against internal schema
-      const validatedConfig = InternalValidationConfigSchema.parse(normalizedConfig);
+      // Parse YAML to object
+      const parsedConfig = parseYaml(interpolatedContent);
+
+      // Verificar se o arquivo está em formato snake_case
+      const isSnakeCase = this.isSnakeCaseFormat(parsedConfig);
+
+      // Converter para camelCase se necessário
+      const configToValidate = isSnakeCase
+        ? convertSnakeToCamel(parsedConfig as SnakeCaseValidationConfig)
+        : parsedConfig;
+
+      // Validate against schema
+      const validatedConfig = InternalValidationConfigSchema.parse(configToValidate);
 
       return validatedConfig as ValidationConfig;
     } catch (error) {
-      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-        throw new Error(`Configuration file not found: ${configPath}`);
-      }
-
       if (error instanceof z.ZodError) {
         const errorMessages = error.errors.map(err =>
           `${err.path.join('.')}: ${err.message}`
         ).join(', ');
+
+        // Adicionar mensagem específica para erros comuns de formato
+        if (errorMessages.includes('fieldMappings') ||
+            errorMessages.includes('targetUrl') ||
+            errorMessages.includes('validationRules')) {
+          throw new Error(`Erro de formato de configuração: As chaves devem estar em formato snake_case (ex: field_mappings, target_url) e não camelCase. Detalhes: ${errorMessages}`);
+        }
+
         throw new Error(`Configuration validation failed: ${errorMessages}`);
       }
 
-      if (error instanceof Error) {
-        throw new Error(`Failed to load configuration: ${error.message}`);
-      }
-
-      throw new Error('Failed to load configuration: Unknown error');
+      throw error;
     }
+  }
+
+  /**
+   * Interpola variáveis de ambiente no conteúdo da configuração
+   */
+  private interpolateEnvVars(content: string): string {
+    return content.replace(/\${([^}]+)}/g, (match, varName) => {
+      return process.env[varName] || match;
+    });
+  }
+
+  /**
+   * Verifica se a configuração está em formato snake_case
+   */
+  private isSnakeCaseFormat(config: any): boolean {
+    // Verificar chaves de nível superior
+    const topLevelKeys = Object.keys(config);
+    const snakeCaseTopKeys = ['target_url', 'field_mappings', 'validation_rules', 'performance', 'evidence'];
+
+    // Se todas as chaves esperadas em snake_case estiverem presentes, é snake_case
+    return snakeCaseTopKeys.some(key => topLevelKeys.includes(key));
   }
 
   /**

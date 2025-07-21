@@ -1,0 +1,76 @@
+target_url: 'https://httpbin.org/html'
+field_mappings:
+  - csv_field: 'name'
+    web_selector: 'h1'
+    field_type: 'text'
+    required: true
+    validation_strategy: 'dom_extraction'
+  - csv_field: 'email'
+    web_selector: 'p'
+    field_type: 'email'
+    required: false
+    validation_strategy: 'dom_extraction'
+
+validation_rules:
+  confidence:
+    minimum_overall: 0.8
+    minimum_field: 0.7
+    ocr_threshold: 0.6
+    fuzzy_match_threshold: 0.85
+  fuzzy_matching:
+    enabled: true
+    algorithms: ['levenshtein', 'jaro_winkler']
+    string_similarity_threshold: 0.85
+    number_tolerance: 0.001
+    case_insensitive: true
+    ignore_whitespace: true
+  normalization:
+    whitespace:
+      trim_leading: true
+      trim_trailing: true
+      normalize_internal: true
+    case:
+      email: 'lowercase'
+      name: 'title_case'
+      text: 'preserve'
+    special_characters:
+      remove_accents: true
+      normalize_quotes: true
+      normalize_dashes: true
+    numbers:
+      decimal_separator: '.'
+      thousand_separator: ','
+      currency_symbol_remove: true
+    dates:
+      target_format: 'YYYY-MM-DD'
+      input_formats: ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD']
+  error_handling:
+    max_retry_attempts: 3
+    retry_delay_ms: 2000
+    exponential_backoff: true
+    critical_errors: ['navigation_timeout', 'page_not_found']
+    recoverable_errors: ['element_not_found', 'ocr_low_confidence']
+    escalation_threshold: 0.1
+
+performance:
+  batch_processing: true
+  batch_size: 10
+  parallel_workers: 3
+  caching:
+    dom_snapshots: true
+    ocr_results: true
+    validation_decisions: false
+    ttl: 3600
+  timeouts:
+    navigation: 30000
+    dom_extraction: 15000
+    ocr_processing: 45000
+    validation_decision: 30000
+    evidence_collection: 10000
+
+evidence:
+  retention_days: 30
+  screenshot_enabled: true
+  dom_snapshot_enabled: true
+  compression_enabled: true
+  include_in_reports: true

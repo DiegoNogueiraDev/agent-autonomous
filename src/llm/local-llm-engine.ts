@@ -10,6 +10,7 @@ import type {
 
 export interface LLMEngineOptions {
   settings: LLMSettings;
+  enableFallback?: boolean;
 }
 
 /**
@@ -23,9 +24,11 @@ export class LocalLLMEngine {
   private requestCount: number = 0;
   private llama: any = null;
   private workingServerUrl: string = 'http://localhost:8000'; // Default server URL
+  private enableFallback: boolean;
 
   constructor(options: LLMEngineOptions) {
     this.logger = Logger.getInstance();
+    this.enableFallback = options.enableFallback ?? true;
     this.settings = {
       ...options.settings,
       // Configurações otimizadas para modelos pequenos
@@ -69,6 +72,14 @@ export class LocalLLMEngine {
         threads: this.settings.threads,
         timestamp: new Date().toISOString()
       });
+
+      // Check if model file exists when fallback is disabled
+      if (!this.enableFallback) {
+        const modelExists = await this.checkModelExists();
+        if (!modelExists) {
+          throw new Error(`Model file not found: ${this.settings.modelPath}`);
+        }
+      }
 
       // Check if LLM server is running
       this.logger.info('🔍 Verificando disponibilidade do servidor LLM...');
@@ -547,7 +558,7 @@ export class LocalLLMEngine {
    */
   async makeValidationDecision(request: ValidationDecisionRequest): Promise<ValidationDecisionResponse> {
     if (!this.initialized) {
-      const errorMsg = 'Motor LLM não inicializado. Chame initialize() primeiro.';
+      const errorMsg = 'LLM Engine not initialized';
       this.logger.error('❌ ' + errorMsg);
       throw new Error(errorMsg);
     }

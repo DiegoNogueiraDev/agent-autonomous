@@ -1,0 +1,76 @@
+targetUrl: 'https://httpbin.org/html'
+fieldMappings:
+  - csvField: 'name'
+    webSelector: 'h1'
+    fieldType: 'text'
+    required: true
+    validationStrategy: 'dom_extraction'
+  - csvField: 'email'
+    webSelector: 'p'
+    fieldType: 'email'
+    required: false
+    validationStrategy: 'dom_extraction'
+
+validationRules:
+  confidence:
+    minimumOverall: 0.8
+    minimumField: 0.7
+    ocrThreshold: 0.6
+    fuzzyMatchThreshold: 0.85
+  fuzzyMatching:
+    enabled: true
+    algorithms: ['levenshtein', 'jaro_winkler']
+    stringSimilarityThreshold: 0.85
+    numberTolerance: 0.001
+    caseInsensitive: true
+    ignoreWhitespace: true
+  normalization:
+    whitespace:
+      trimLeading: true
+      trimTrailing: true
+      normalizeInternal: true
+    case:
+      email: 'lowercase'
+      name: 'title_case'
+      text: 'preserve'
+    specialCharacters:
+      removeAccents: true
+      normalizeQuotes: true
+      normalizeDashes: true
+    numbers:
+      decimalSeparator: '.'
+      thousandSeparator: ','
+      currencySymbolRemove: true
+    dates:
+      targetFormat: 'YYYY-MM-DD'
+      inputFormats: ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD']
+  errorHandling:
+    maxRetryAttempts: 3
+    retryDelayMs: 2000
+    exponentialBackoff: true
+    criticalErrors: ['navigation_timeout', 'page_not_found']
+    recoverableErrors: ['element_not_found', 'ocr_low_confidence']
+    escalationThreshold: 0.1
+
+performance:
+  batchProcessing: true
+  batchSize: 10
+  parallelWorkers: 3
+  caching:
+    domSnapshots: true
+    ocrResults: true
+    validationDecisions: false
+    ttl: 3600
+  timeouts:
+    navigation: 30000
+    domExtraction: 15000
+    ocrProcessing: 45000
+    validationDecision: 30000
+    evidenceCollection: 10000
+
+evidence:
+  retentionDays: 30
+  screenshotEnabled: true
+  domSnapshotEnabled: true
+  compressionEnabled: true
+  includeInReports: true

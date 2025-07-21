@@ -1,0 +1,161 @@
+confidence:
+  minimum_overall: 0.8
+  minimum_field: 0.7
+  ocr_threshold: 0.6
+  fuzzy_match_threshold: 0.85
+fuzzy_matching:
+  enabled: true
+  algorithms:
+    - levenshtein
+    - jaro_winkler
+    - cosine_similarity
+  string_similarity_threshold: 0.85
+  number_tolerance: 0.001
+  date_format_flexible: true
+  case_insensitive: true
+  ignore_whitespace: true
+field_types:
+  email:
+    validation: email_regex
+    normalization: lowercase_trim
+    fuzzy_matching: false
+  phone:
+    validation: phone_regex
+    normalization: digits_only
+    fuzzy_matching: true
+    fuzzy_threshold: 0.9
+  currency:
+    validation: currency_regex
+    normalization: decimal_standardize
+    tolerance: 0.01
+    fuzzy_matching: false
+  date:
+    validation: date_parse
+    normalization: iso_format
+    fuzzy_matching: true
+    fuzzy_threshold: 0.95
+    flexible_formats: true
+  name:
+    validation: string_length
+    normalization: title_case_trim
+    fuzzy_matching: true
+    fuzzy_threshold: 0.8
+  address:
+    validation: address_components
+    normalization: address_standardize
+    fuzzy_matching: true
+    fuzzy_threshold: 0.75
+  text:
+    validation: string_basic
+    normalization: trim_spaces
+    fuzzy_matching: true
+    fuzzy_threshold: 0.85
+normalization:
+  whitespace:
+    trim_leading: true
+    trim_trailing: true
+    normalize_internal: true
+  case:
+    email: lowercase
+    phone: digits_only
+    name: title_case
+    address: title_case
+    text: preserve
+  special_characters:
+    remove_accents: true
+    normalize_quotes: true
+    normalize_dashes: true
+  numbers:
+    decimal_separator: .
+    thousand_separator: ","
+    currency_symbol_remove: true
+  dates:
+    target_format: YYYY-MM-DD
+    input_formats:
+      - MM/DD/YYYY
+      - DD/MM/YYYY
+      - YYYY-MM-DD
+      - MM-DD-YYYY
+      - DD-MM-YYYY
+ocr:
+  preprocessing:
+    enabled: true
+    steps:
+      - contrast_enhancement
+      - noise_reduction
+      - sharpening
+      - binarization
+  postprocessing:
+    enabled: true
+    steps:
+      - spell_check
+      - common_ocr_fixes
+      - whitespace_normalization
+  confidence_boosting:
+    multiple_engines: false
+    region_analysis: true
+    font_detection: true
+strategies:
+  primary: dom_extraction
+  fallback: ocr_extraction
+  hybrid_strategy: dom_with_ocr_verification
+  dom_extraction:
+    timeout: 30000
+    retry_attempts: 3
+    wait_for_elements: true
+    handle_dynamic_content: true
+  ocr_extraction:
+    timeout: 45000
+    retry_attempts: 2
+    preprocessing_required: true
+    region_detection: true
+  hybrid_settings:
+    dom_confidence_threshold: 0.9
+    verify_with_ocr: true
+    ocr_verification_threshold: 0.8
+error_handling:
+  max_retry_attempts: 3
+  retry_delay_ms: 2000
+  exponential_backoff: true
+  critical_errors:
+    - navigation_timeout
+    - page_not_found
+    - invalid_csv_format
+  recoverable_errors:
+    - element_not_found
+    - ocr_low_confidence
+    - network_timeout
+  error_escalation:
+    max_consecutive_failures: 5
+    escalation_threshold: 0.1
+performance:
+  batch_processing:
+    enabled: true
+    batch_size: 10
+    parallel_workers: 3
+  caching:
+    dom_snapshots: true
+    ocr_results: true
+    validation_decisions: false
+  timeouts:
+    navigation: 30000
+    dom_extraction: 15000
+    ocr_processing: 45000
+    validation_decision: 30000
+    evidence_collection: 10000
+quality_assurance:
+  sampling:
+    enabled: true
+    sample_rate: 0.05
+    high_confidence_skip: false
+  double_validation:
+    enabled: false
+    confidence_threshold: 0.7
+  manual_review:
+    low_confidence_threshold: 0.6
+    discrepancy_threshold: 3
+  audit_trail:
+    enabled: true
+    include_screenshots: true
+    include_reasoning: true
+    retention_days: 90
