@@ -1,7 +1,6 @@
-import sharp from 'sharp';
-import Tesseract from 'tesseract.js';
 import { Logger } from '../core/logger.js';
 import type { OCRResult, OCRSettings } from '../types/index.js';
+import { PythonOCRClient } from './python-ocr-client.js';
 
 export interface OCREngineOptions {
   settings: OCRSettings;
@@ -10,7 +9,7 @@ export interface OCREngineOptions {
 export interface ImagePreprocessingOptions {
   denoise?: boolean;
   enhanceContrast?: boolean;
-  threshold?: number;
+  threshold?: boolean;
   scale?: number;
   cropRegion?: {
     left: number;
@@ -28,14 +27,15 @@ export interface OCRSearchOptions {
 }
 
 /**
- * Advanced OCR Engine using Tesseract.js for text extraction from images
- * Acts as intelligent fallback when DOM extraction fails
- * Includes image preprocessing and fuzzy matching capabilities
+ * Enhanced OCR Engine - Wrapper para Python OCR Client
+ * Mantém compatibilidade com API antiga mas usa Python Tesseract internamente
+ *
+ * @deprecated Use PythonOCRClient diretamente para novos projetos
  */
 export class OCREngine {
   private logger: Logger;
   private settings: OCRSettings;
-  private worker: Tesseract.Worker | null = null;
+  private pythonClient: PythonOCRClient;
   private initialized: boolean = false;
   private processingStats: {
     totalImages: number;
@@ -52,57 +52,35 @@ export class OCREngine {
   constructor(options: OCREngineOptions) {
     this.logger = Logger.getInstance();
     this.settings = options.settings;
+
+    // Criar cliente Python com configurações compatíveis
+    this.pythonClient = new PythonOCRClient({
+      pythonServiceUrl: process.env.PYTHON_OCR_URL || 'http://localhost:5000',
+      timeout: 30000,
+      retryAttempts: 3
+    });
   }
 
   /**
-   * Initialize the OCR worker with improved error handling and fallback
+   * Initialize the OCR engine (wrapper para Python client)
    */
   async initialize(): Promise<void> {
     try {
-      // Validate settings before initialization
-      const validation = await OCREngine.validateSettings(this.settings);
-      if (!validation.valid) {
-        throw new Error(`OCR settings validation failed: ${validation.errors.join(', ')}`);
-      }
-      
-      if (validation.warnings.length > 0) {
-        this.logger.warn('OCR settings warnings', { warnings: validation.warnings });
-      }
-
-      this.logger.info('Initializing OCR Engine', {
+      this.logger.info('Initializing OCR Engine (Python backend)', {
         language: this.settings.language,
         mode: this.settings.mode
       });
 
-      // Try to create worker with specified language
-      try {
-        this.worker = await Tesseract.createWorker(this.settings.language);
-      } catch (languageError) {
-        this.logger.warn(`Failed to initialize with language '${this.settings.language}', trying English fallback`, {
-          originalError: languageError instanceof Error ? languageError.message : 'Unknown error'
-        });
-        
-        // Fallback to English if specified language fails
-        try {
-          this.worker = await Tesseract.createWorker('eng');
-          this.logger.info('OCR Engine initialized with English fallback');
-        } catch (fallbackError) {
-          throw new Error(`Failed to initialize OCR with both '${this.settings.language}' and English fallback: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`);
-        }
-      }
-
-      // Configure worker parameters for better accuracy
-      await this.worker.setParameters({
-        tessedit_page_seg_mode: this.settings.mode,
-        tessedit_char_whitelist: this.settings.whitelist || '',
-      });
-
+      await this.pythonClient.initialize();
       this.initialized = true;
-      this.logger.info('OCR Engine initialized successfully');
+      this.logger.info('OCR Engine initialized successfully with Python backend');
 
     } catch (error) {
       this.logger.error('Failed to initialize OCR engine', error);
-      throw error;
+      throw new Error(
+        `Failed to initialize OCR engine: ${error instanceof Error ? error.message : 'Unknown error'}. ` +
+        'Please ensure Python OCR service is running on http://localhost:5000'
+      );
     }
   }
 
@@ -110,59 +88,28 @@ export class OCREngine {
    * Check if the OCR engine is initialized
    */
   isInitialized(): boolean {
-    return this.initialized;
+    return this.initialized && this.pythonClient.isInitialized();
   }
 
   /**
    * Extract text from image buffer
    */
   async extractText(imageBuffer: Buffer): Promise<OCRResult> {
-    if (!this.initialized || !this.worker) {
+    if (!this.initialized) {
       throw new Error('OCR Engine not initialized. Call initialize() first.');
     }
-
-    const startTime = Date.now();
 
     try {
       this.logger.debug('Starting OCR text extraction', {
         imageSize: imageBuffer.length
       });
 
-      const { data } = await this.worker.recognize(imageBuffer);
-      const processingTime = Date.now() - startTime;
+      const result = await this.pythonClient.extractText(imageBuffer);
 
-      const result: OCRResult = {
-        text: data.text,
-        confidence: data.confidence,
-        words: data.words?.map(word => ({
-          text: word.text,
-          confidence: word.confidence,
-          bbox: {
-            x0: word.bbox.x0,
-            y0: word.bbox.y0,
-            x1: word.bbox.x1,
-            y1: word.bbox.y1
-          }
-        })) || [],
-        lines: data.lines?.map(line => ({
-          text: line.text,
-          confidence: line.confidence,
-          bbox: {
-            x0: line.bbox.x0,
-            y0: line.bbox.y0,
-            x1: line.bbox.x1,
-            y1: line.bbox.y1
-          }
-        })) || [],
-        processingTime
-      };
-
-      this.logger.info('OCR text extraction completed', {
-        textLength: result.text.length,
-        confidence: result.confidence,
-        wordCount: result.words.length,
-        processingTime
-      });
+      // Atualizar estatísticas
+      this.processingStats.totalImages++;
+      this.processingStats.successfulExtractions++;
+      this.updateProcessingStats(result.confidence, result.processingTime);
 
       return result;
 
@@ -176,52 +123,23 @@ export class OCREngine {
    * Extract text from image file path
    */
   async extractTextFromFile(imagePath: string): Promise<OCRResult> {
-    if (!this.initialized || !this.worker) {
+    if (!this.initialized) {
       throw new Error('OCR Engine not initialized. Call initialize() first.');
     }
-
-    const startTime = Date.now();
 
     try {
       this.logger.debug('Starting OCR text extraction from file', {
         imagePath
       });
 
-      const { data } = await this.worker.recognize(imagePath);
-      const processingTime = Date.now() - startTime;
-
-      const result: OCRResult = {
-        text: data.text,
-        confidence: data.confidence,
-        words: data.words?.map(word => ({
-          text: word.text,
-          confidence: word.confidence,
-          bbox: {
-            x0: word.bbox.x0,
-            y0: word.bbox.y0,
-            x1: word.bbox.x1,
-            y1: word.bbox.y1
-          }
-        })) || [],
-        lines: data.lines?.map(line => ({
-          text: line.text,
-          confidence: line.confidence,
-          bbox: {
-            x0: line.bbox.x0,
-            y0: line.bbox.y0,
-            x1: line.bbox.x1,
-            y1: line.bbox.y1
-          }
-        })) || [],
-        processingTime
-      };
+      const result = await this.pythonClient.extractTextFromFile(imagePath);
 
       this.logger.info('OCR text extraction from file completed', {
         imagePath,
         textLength: result.text.length,
         confidence: result.confidence,
         wordCount: result.words.length,
-        processingTime
+        processingTime: result.processingTime
       });
 
       return result;
@@ -233,155 +151,14 @@ export class OCREngine {
   }
 
   /**
-   * Clean up resources
-   */
-  async cleanup(): Promise<void> {
-    if (this.worker) {
-      try {
-        await this.worker.terminate();
-        this.worker = null;
-        this.initialized = false;
-        this.logger.info('OCR Engine cleaned up');
-      } catch (error) {
-        this.logger.error('Error cleaning up OCR engine', error);
-      }
-    }
-  }
-
-  /**
-   * Preprocess image for better OCR accuracy
+   * Preprocess image for better OCR accuracy (delegado para Python)
    */
   async preprocessImage(
     imageBuffer: Buffer,
-    options: ImagePreprocessingOptions = {}
+    _options: ImagePreprocessingOptions = {}
   ): Promise<Buffer> {
-    try {
-      // Validate input buffer
-      if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
-        this.logger.warn('Invalid or empty image buffer, returning original');
-        return imageBuffer;
-      }
-
-      let image = sharp(imageBuffer);
-
-      // Get image metadata with error handling
-      let metadata;
-      try {
-        metadata = await image.metadata();
-        if (!metadata.width || !metadata.height) {
-          this.logger.warn('Invalid image dimensions, skipping preprocessing');
-          return imageBuffer;
-        }
-      } catch (metadataError) {
-        this.logger.warn('Failed to get image metadata, returning original buffer', { error: metadataError });
-        return imageBuffer;
-      }
-
-      this.logger.debug('Image preprocessing started', {
-        width: metadata.width,
-        height: metadata.height,
-        format: metadata.format,
-        options
-      });
-
-      // Apply each transformation with individual error handling
-      try {
-        // Apply cropping if specified
-        if (options.cropRegion) {
-          const { left, top, width, height } = options.cropRegion;
-          // Validate crop region
-          if (left >= 0 && top >= 0 && width > 0 && height > 0 &&
-            left + width <= metadata.width! && top + height <= metadata.height!) {
-            image = image.extract({ left, top, width, height });
-            this.logger.debug('Applied crop region', options.cropRegion);
-          } else {
-            this.logger.warn('Invalid crop region, skipping', options.cropRegion);
-          }
-        }
-      } catch (cropError) {
-        this.logger.warn('Crop operation failed, continuing without crop', { error: cropError });
-      }
-
-      try {
-        // Scale image if specified
-        if (options.scale && options.scale !== 1 && options.scale > 0 && options.scale < 10) {
-          const newWidth = Math.round((metadata.width || 0) * options.scale);
-          const newHeight = Math.round((metadata.height || 0) * options.scale);
-          if (newWidth > 0 && newHeight > 0) {
-            image = image.resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3 });
-            this.logger.debug('Applied scaling', { scale: options.scale, newWidth, newHeight });
-          }
-        }
-      } catch (scaleError) {
-        this.logger.warn('Scaling operation failed, continuing without scale', { error: scaleError });
-      }
-
-      try {
-        // Convert to grayscale for better OCR performance
-        image = image.grayscale();
-      } catch (grayscaleError) {
-        this.logger.warn('Grayscale conversion failed, continuing with original', { error: grayscaleError });
-      }
-
-      try {
-        // Enhance contrast if requested
-        if (options.enhanceContrast) {
-          image = image.normalise();
-          this.logger.debug('Applied contrast enhancement');
-        }
-      } catch (contrastError) {
-        this.logger.warn('Contrast enhancement failed, continuing without enhancement', { error: contrastError });
-      }
-
-      try {
-        // Apply threshold for binarization
-        if (options.threshold !== undefined && options.threshold >= 0 && options.threshold <= 255) {
-          image = image.threshold(options.threshold);
-          this.logger.debug('Applied threshold', { threshold: options.threshold });
-        }
-      } catch (thresholdError) {
-        this.logger.warn('Threshold operation failed, continuing without threshold', { error: thresholdError });
-      }
-
-      try {
-        // Denoise if requested
-        if (options.denoise) {
-          image = image.median(3);
-          this.logger.debug('Applied denoising');
-        }
-      } catch (denoiseError) {
-        this.logger.warn('Denoise operation failed, continuing without denoise', { error: denoiseError });
-      }
-
-      // Convert to PNG format for consistency with final error handling
-      let processedBuffer: Buffer;
-      try {
-        processedBuffer = await image.png().toBuffer();
-      } catch (pngError) {
-        this.logger.warn('PNG conversion failed, trying JPEG format', { error: pngError });
-        try {
-          processedBuffer = await image.jpeg({ quality: 90 }).toBuffer();
-        } catch (jpegError) {
-          this.logger.error('Both PNG and JPEG conversion failed, returning original buffer', {
-            pngError,
-            jpegError
-          });
-          return imageBuffer;
-        }
-      }
-
-      this.logger.debug('Image preprocessing completed', {
-        originalSize: imageBuffer.length,
-        processedSize: processedBuffer.length
-      });
-
-      return processedBuffer;
-
-    } catch (error) {
-      this.logger.error('Image preprocessing failed completely, returning original buffer', { error });
-      // Return original buffer as fallback instead of throwing
-      return imageBuffer;
-    }
+    // O Python OCR service lida com pré-processamento internamente
+    return imageBuffer;
   }
 
   /**
@@ -391,7 +168,7 @@ export class OCREngine {
     imageBuffer: Buffer,
     preprocessingOptions: ImagePreprocessingOptions = {}
   ): Promise<OCRResult> {
-    if (!this.initialized || !this.worker) {
+    if (!this.initialized) {
       throw new Error('OCR Engine not initialized. Call initialize() first.');
     }
 
@@ -399,20 +176,22 @@ export class OCREngine {
     this.processingStats.totalImages++;
 
     try {
-      // Try preprocessing first, but fall back to original if it fails
-      let processedImage: Buffer;
-      try {
-        processedImage = await this.preprocessImage(imageBuffer, preprocessingOptions);
-        this.logger.debug('Image preprocessing successful');
-      } catch (preprocessError) {
-        this.logger.warn('Image preprocessing failed, using original image', { error: preprocessError });
-        processedImage = imageBuffer;
-      }
+      this.logger.debug('Starting OCR extraction with preprocessing', {
+        imageSize: imageBuffer.length,
+        preprocessingOptions
+      });
 
-      // Extract text from processed (or original) image
-      const result = await this.extractText(processedImage);
+      const result = await this.pythonClient.extractTextWithPreprocessing(
+        imageBuffer,
+        {
+          denoise: preprocessingOptions.denoise,
+          enhanceContrast: preprocessingOptions.enhanceContrast,
+          threshold: preprocessingOptions.threshold || false,
+          scale: preprocessingOptions.scale,
+          cropRegion: preprocessingOptions.cropRegion
+        } as any
+      );
 
-      // Update statistics
       this.processingStats.successfulExtractions++;
       this.updateProcessingStats(result.confidence, result.processingTime);
 
@@ -428,9 +207,9 @@ export class OCREngine {
     } catch (error) {
       this.logger.error('OCR extraction with preprocessing failed', { error });
 
-      // Try one more time with just the original buffer and minimal processing
+      // Try fallback with basic extraction
       try {
-        this.logger.info('Attempting OCR fallback with original image buffer');
+        this.logger.info('Attempting OCR fallback with basic extraction');
         const fallbackResult = await this.extractText(imageBuffer);
 
         this.logger.warn('OCR fallback succeeded', {
@@ -443,13 +222,7 @@ export class OCREngine {
         this.logger.error('OCR fallback also failed', { fallbackError });
 
         // Return empty result instead of throwing
-        return {
-          text: '',
-          confidence: 0,
-          words: [],
-          lines: [],
-          processingTime: Date.now() - startTime
-        };
+        return this.getEmptyResult();
       }
     }
   }
@@ -528,6 +301,56 @@ export class OCREngine {
   }
 
   /**
+   * Extract text from specific region of an image
+   */
+  async extractTextFromRegion(
+    imageBuffer: Buffer,
+    region: { x: number; y: number; width: number; height: number },
+    preprocessingOptions: ImagePreprocessingOptions = {}
+  ): Promise<OCRResult> {
+    const regionOptions: ImagePreprocessingOptions = {
+      ...preprocessingOptions,
+      cropRegion: {
+        left: region.x,
+        top: region.y,
+        width: region.width,
+        height: region.height
+      }
+    };
+
+    return this.extractTextWithPreprocessing(imageBuffer, regionOptions);
+  }
+
+  /**
+   * Batch process multiple images
+   */
+  async batchExtractText(
+    images: Array<{ buffer: Buffer; id: string; preprocessingOptions?: ImagePreprocessingOptions }>
+  ): Promise<Array<{ id: string; result: OCRResult; error?: string }>> {
+    const results: Array<{ id: string; result: OCRResult; error?: string }> = [];
+
+    for (const image of images) {
+      try {
+        const result = await this.pythonClient.extractTextWithPreprocessing(
+          image.buffer,
+          image.preprocessingOptions || {}
+        );
+        results.push({ id: image.id, result });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        this.logger.error(`Batch OCR failed for image ${image.id}`, error);
+        results.push({
+          id: image.id,
+          result: this.getEmptyResult(),
+          error: errorMessage
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * Calculate string similarity using Levenshtein distance
    */
   private calculateSimilarity(str1: string, str2: string): number {
@@ -579,56 +402,6 @@ export class OCREngine {
   }
 
   /**
-   * Extract text from specific region of an image
-   */
-  async extractTextFromRegion(
-    imageBuffer: Buffer,
-    region: { x: number; y: number; width: number; height: number },
-    preprocessingOptions: ImagePreprocessingOptions = {}
-  ): Promise<OCRResult> {
-    const regionOptions: ImagePreprocessingOptions = {
-      ...preprocessingOptions,
-      cropRegion: {
-        left: region.x,
-        top: region.y,
-        width: region.width,
-        height: region.height
-      }
-    };
-
-    return this.extractTextWithPreprocessing(imageBuffer, regionOptions);
-  }
-
-  /**
-   * Batch process multiple images
-   */
-  async batchExtractText(
-    images: Array<{ buffer: Buffer; id: string; preprocessingOptions?: ImagePreprocessingOptions }>
-  ): Promise<Array<{ id: string; result: OCRResult; error?: string }>> {
-    const results: Array<{ id: string; result: OCRResult; error?: string }> = [];
-
-    for (const image of images) {
-      try {
-        const result = await this.extractTextWithPreprocessing(
-          image.buffer,
-          image.preprocessingOptions || {}
-        );
-        results.push({ id: image.id, result });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        this.logger.error(`Batch OCR failed for image ${image.id}`, error);
-        results.push({
-          id: image.id,
-          result: this.getEmptyResult(),
-          error: errorMessage
-        });
-      }
-    }
-
-    return results;
-  }
-
-  /**
    * Get empty OCR result for error cases
    */
   private getEmptyResult(): OCRResult {
@@ -656,6 +429,7 @@ export class OCREngine {
       initialized: this.initialized,
       language: this.settings.language,
       mode: this.settings.mode,
+      backend: 'python',
       processing: {
         totalImages: this.processingStats.totalImages,
         successfulExtractions: this.processingStats.successfulExtractions,
@@ -679,7 +453,7 @@ export class OCREngine {
   }
 
   /**
-   * Get supported languages
+   * Get supported languages (delegado para Python)
    */
   static getSupportedLanguages(): string[] {
     return [
@@ -689,7 +463,7 @@ export class OCREngine {
   }
 
   /**
-   * Validate OCR settings with language file availability check
+   * Validate OCR settings (compatível com API antiga)
    */
   static async validateSettings(settings: OCRSettings): Promise<{ valid: boolean; errors: string[]; warnings: string[] }> {
     const errors: string[] = [];
@@ -702,25 +476,10 @@ export class OCREngine {
     } else {
       // Parse individual languages
       const languages = settings.language.split('+');
-      
+
       for (const lang of languages) {
-        // Check if language is in supported list
         if (!supportedLanguages.includes(lang)) {
           warnings.push(`Language '${lang}' not in known supported list, but may still work`);
-        }
-        
-        // Try to check for Tesseract language files
-        try {
-          // Tesseract.js downloads language files to temp directory during runtime
-          // We can't reliably check for their existence beforehand
-          // Instead, we'll add a warning for languages that might not be available
-          const commonLanguages = ['eng', 'por', 'spa', 'fra', 'deu'];
-          if (!commonLanguages.includes(lang)) {
-            warnings.push(`Language '${lang}' may require additional download time on first use`);
-          }
-        } catch (error) {
-          // Language file check failed, but this is not critical
-          warnings.push(`Could not verify availability of language '${lang}' - will be validated during initialization`);
         }
       }
     }
@@ -729,13 +488,13 @@ export class OCREngine {
     if (settings.mode !== undefined && (settings.mode < 0 || settings.mode > 13)) {
       errors.push(`Invalid page segmentation mode: ${settings.mode}. Must be 0-13`);
     }
-    
+
     // Validate confidence threshold
-    if (settings.confidenceThreshold !== undefined && 
-        (settings.confidenceThreshold < 0 || settings.confidenceThreshold > 100)) {
+    if (settings.confidenceThreshold !== undefined &&
+      (settings.confidenceThreshold < 0 || settings.confidenceThreshold > 100)) {
       errors.push(`Invalid confidence threshold: ${settings.confidenceThreshold}. Must be 0-100`);
     }
-    
+
     // Validate whitelist characters
     if (settings.whitelist !== undefined && settings.whitelist.length > 200) {
       warnings.push('Character whitelist is very long and may impact performance');
@@ -747,7 +506,7 @@ export class OCREngine {
       warnings
     };
   }
-  
+
   /**
    * Synchronous version for backward compatibility
    */
@@ -775,5 +534,18 @@ export class OCREngine {
       valid: errors.length === 0,
       errors
     };
+  }
+
+  /**
+   * Clean up resources
+   */
+  async cleanup(): Promise<void> {
+    try {
+      await this.pythonClient.cleanup();
+      this.initialized = false;
+      this.logger.info('OCR Engine cleaned up (Python backend)');
+    } catch (error) {
+      this.logger.error('Error cleaning up OCR engine', error);
+    }
   }
 }

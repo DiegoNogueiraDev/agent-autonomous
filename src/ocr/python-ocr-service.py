@@ -10,6 +10,7 @@ import json
 import logging
 import tempfile
 import base64
+import time
 from typing import Dict, List, Any, Optional, Tuple
 from io import BytesIO
 from pathlib import Path
@@ -65,7 +66,20 @@ class PythonOCRService:
                 if image_data.startswith('data:image'):
                     image_data = image_data.split(',')[1]
 
-                image_bytes = base64.b64decode(image_data)
+                try:
+                    image_bytes = base64.b64decode(image_data)
+                    if len(image_bytes) == 0:
+                        return jsonify({'error': 'Image data is empty'}), 400
+                    
+                    # Validate image format
+                    try:
+                        test_image = Image.open(BytesIO(image_bytes))
+                        test_image.verify()
+                    except Exception as img_err:
+                        return jsonify({'error': f'Invalid image format: {str(img_err)}'}), 400
+                        
+                except Exception as decode_err:
+                    return jsonify({'error': f'Failed to decode base64 image: {str(decode_err)}'}), 400
 
                 # Extract text
                 result = self.perform_ocr(image_bytes, options)
@@ -91,10 +105,20 @@ class PythonOCRService:
                 for img_data in images:
                     try:
                         # Decode base64 image
-                        if img_data.get('image', '').startswith('data:image'):
-                            img_data['image'] = img_data['image'].split(',')[1]
+                        image_data = img_data.get('image', '')
+                        if image_data.startswith('data:image'):
+                            image_data = image_data.split(',')[1]
 
-                        image_bytes = base64.b64decode(img_data['image'])
+                        if not image_data:
+                            raise ValueError('No image data provided')
+
+                        image_bytes = base64.b64decode(image_data)
+                        if len(image_bytes) == 0:
+                            raise ValueError('Image data is empty')
+                        
+                        # Validate image format
+                        test_image = Image.open(BytesIO(image_bytes))
+                        test_image.verify()
 
                         # Extract text
                         result = self.perform_ocr(image_bytes, options)
@@ -165,10 +189,17 @@ class PythonOCRService:
                 opencv_image = cv2.resize(opencv_image, (width, height), interpolation=cv2.INTER_CUBIC)
 
             # Crop region if specified
-            if 'crop_region' in options:
+            if 'crop_region' in options and options['crop_region']:
                 crop = options['crop_region']
-                x, y, w, h = crop['x'], crop['y'], crop['width'], crop['height']
-                opencv_image = opencv_image[y:y+h, x:x+w]
+                if all(key in crop for key in ['left', 'top', 'width', 'height']):
+                    x, y, w, h = crop['left'], crop['top'], crop['width'], crop['height']
+                    # Validate crop region bounds
+                    img_h, img_w = opencv_image.shape[:2]
+                    x = max(0, min(x, img_w))
+                    y = max(0, min(y, img_h))
+                    w = max(1, min(w, img_w - x))
+                    h = max(1, min(h, img_h - y))
+                    opencv_image = opencv_image[y:y+h, x:x+w]
 
             return opencv_image
 
