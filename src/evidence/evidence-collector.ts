@@ -1,5 +1,5 @@
-import { writeFile, mkdir, stat } from 'fs/promises';
-import { join, dirname } from 'path';
+import { writeFile, mkdir } from 'fs/promises';
+import { join } from 'path';
 import { createHash } from 'crypto';
 import { Logger } from '../core/logger.js';
 import type { 

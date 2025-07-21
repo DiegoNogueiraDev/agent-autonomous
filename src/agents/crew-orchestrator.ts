@@ -313,8 +313,7 @@ export class CrewOrchestrator {
           gpuLayers: 0,
           temperature: 0.1,
           maxTokens: 1024
-        },
-        enableFallback: true
+        }
       });
       await this.llmEngine.initialize();
     }
@@ -342,7 +341,7 @@ export class CrewOrchestrator {
   getAgentStatus(): Record<string, any> {
     const status: Record<string, any> = {};
     
-    for (const [id, agent] of this.agents) {
+    for (const [, agent] of this.agents) {
       status[agent.role] = {
         id: agent.id,
         name: agent.name,
@@ -721,8 +720,8 @@ export class CrewOrchestrator {
   private getAgentUtilization(): Record<string, any> {
     const utilization: Record<string, any> = {};
     
-    for (const [id, agent] of this.agents) {
-      utilization[id] = {
+    for (const [agentId, agent] of this.agents) {
+      utilization[agentId] = {
         role: agent.role,
         status: agent.status,
         tasksCompleted: agent.performance.tasksCompleted,
@@ -763,7 +762,7 @@ export class CrewOrchestrator {
     const agentHealthStatus: Record<string, boolean> = {};
     let overallHealth = true;
 
-    for (const [id, agent] of this.agents) {
+    for (const [, agent] of this.agents) {
       const isHealthy = agent.status !== 'error' && agent.status !== 'offline';
       agentHealthStatus[agent.role] = isHealthy;
       if (!isHealthy) overallHealth = false;
@@ -784,7 +783,7 @@ export class CrewOrchestrator {
       : 1;
 
     const agentUtilization: Record<string, any> = {};
-    for (const [id, agent] of this.agents) {
+    for (const [, agent] of this.agents) {
       agentUtilization[agent.role] = {
         tasksCompleted: agent.performance.tasksCompleted,
         successRate: agent.performance.successRate,
@@ -809,7 +808,7 @@ export class CrewOrchestrator {
   getCircuitBreakerStatus(): Record<string, any> {
     const status: Record<string, any> = {};
     
-    for (const [id, agent] of this.agents) {
+    for (const [, agent] of this.agents) {
       const failureRate = 1 - agent.performance.successRate;
       status[agent.role] = {
         state: failureRate > 0.5 ? 'OPEN' : 'CLOSED',

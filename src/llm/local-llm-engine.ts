@@ -10,7 +10,6 @@ import type {
 
 export interface LLMEngineOptions {
   settings: LLMSettings;
-  enableFallback?: boolean;
 }
 
 /**
@@ -23,13 +22,11 @@ export class LocalLLMEngine {
   private initialized: boolean = false;
   private requestCount: number = 0;
   private llama: any = null;
-  private enableFallback: boolean;
   private workingServerUrl: string = 'http://localhost:8000'; // Default server URL
 
   constructor(options: LLMEngineOptions) {
     this.logger = Logger.getInstance();
     this.settings = options.settings;
-    this.enableFallback = options.enableFallback ?? true;
   }
 
   /**

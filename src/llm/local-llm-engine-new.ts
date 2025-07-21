@@ -116,7 +116,7 @@ export class LocalLLMEngine {
     return {
       modelPath,
       initialized: true,
-      generate: async (prompt: string, options: any = {}) => {
+      generate: async (prompt: string) => {
         // Simulate processing time
         await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
         

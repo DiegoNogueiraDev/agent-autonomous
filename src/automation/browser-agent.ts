@@ -327,7 +327,7 @@ export class BrowserAgent implements ManagedResource {
       const tagName = await element.evaluate(el => el.tagName.toLowerCase());
 
       switch (tagName) {
-        case 'input':
+        case 'input': {
           const inputType = await element.getAttribute('type');
           if (inputType === 'checkbox' || inputType === 'radio') {
             value = await element.isChecked();
@@ -335,6 +335,7 @@ export class BrowserAgent implements ManagedResource {
             value = await element.inputValue();
           }
           break;
+        }
 
         case 'select':
           value = await element.evaluate(el => (el as any).value);
@@ -633,9 +634,10 @@ export class BrowserAgent implements ManagedResource {
     if (stringValue === '') return null;
 
     switch (fieldType) {
-      case 'number':
+      case 'number': {
         const numValue = parseFloat(stringValue.replace(/[^0-9.-]/g, ''));
         return isNaN(numValue) ? null : numValue;
+      }
 
       case 'boolean':
         return stringValue.toLowerCase() === 'true' || stringValue === '1';
@@ -643,9 +645,10 @@ export class BrowserAgent implements ManagedResource {
       case 'email':
         return stringValue.toLowerCase();
 
-      case 'currency':
+      case 'currency': {
         const currencyValue = parseFloat(stringValue.replace(/[^0-9.-]/g, ''));
         return isNaN(currencyValue) ? null : currencyValue;
+      }
 
       default:
         return stringValue;

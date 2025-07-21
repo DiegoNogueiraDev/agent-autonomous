@@ -1,6 +1,5 @@
 import sharp from 'sharp';
 import Tesseract from 'tesseract.js';
-import { access, constants } from 'fs/promises';
 import { Logger } from '../core/logger.js';
 import type { OCRResult, OCRSettings } from '../types/index.js';
 

@@ -1,5 +1,5 @@
 import { writeFile, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import { Logger } from '../core/logger.js';
 import type { Report, ReportFormat } from '../types/index.js';
 

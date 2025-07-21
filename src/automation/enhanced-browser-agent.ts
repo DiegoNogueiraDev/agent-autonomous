@@ -7,7 +7,6 @@ import type {
   NavigationResult, 
   ExtractedWebData, 
   Screenshot, 
-  BoundingBox,
   PageMetadata,
   FieldMapping,
   CSVRow,
