@@ -200,14 +200,11 @@ export class CSVLoader {
           : undefined,
         transform: (value: string) => value.trim(),
         dynamicTyping: false, // Keep everything as strings for consistency
-        encoding: 'utf-8',    // Garantir UTF-8
         fastMode: false,      // Usar modo mais robusto
         skipFirstNLines: 0,
-        newline: '',          // Auto-detect newlines
         quoteChar: '"',
         escapeChar: '"',
-        comments: false,
-        step: mergedConfig.tolerantMode ? undefined : undefined // Para processamento linha por linha se necessário
+        comments: false
       });
 
       if (parseResult.errors.length > 0) {

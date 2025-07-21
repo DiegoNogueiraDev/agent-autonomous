@@ -18,13 +18,14 @@ import type {
   ValidationConfig,
   ValidationResult
 } from '../types/index.js';
-import { CSVLoader } from './csv-loader.js';
+import { CSVLoader, CSVConfig } from './csv-loader.js';
 import { Logger } from './logger.js';
 
 export interface TaskmasterOptions {
   outputPath: string;
   reportFormats: ReportFormat[];
   progressCallback?: (processed: number, total: number) => void;
+  csvConfig?: CSVConfig;
 }
 
 export class TaskmasterController {
@@ -436,7 +437,7 @@ export class TaskmasterController {
     try {
       // 1. Load and validate CSV
       this.logger.info('Loading CSV file...');
-      const csvData = await this.csvLoader.load(csvPath);
+      const csvData = await this.csvLoader.load(csvPath, options.csvConfig);
       this.logger.info(`CSV loaded successfully: ${csvData.rows.length} rows`, {
         headers: csvData.metadata.headers,
         delimiter: csvData.metadata.delimiter

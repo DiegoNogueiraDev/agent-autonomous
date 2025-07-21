@@ -52,6 +52,8 @@ async function main() {
     .option('--dry-run', 'Validate configuration without processing')
     .option('--max-rows <number>', 'Maximum number of rows to process')
     .option('--parallel <number>', 'Number of parallel workers (default: 3)', '3')
+    .option('--tolerant', 'Enable tolerant mode for CSV parsing (ignore minor format issues)')
+    .option('--error-threshold <number>', 'Maximum error rate allowed in tolerant mode (0.0-1.0)', '0.1')
     .action(async (options) => {
       try {
         await handleValidateCommand(options);
@@ -169,6 +171,11 @@ async function handleValidateCommand(options: any) {
   const result = await taskmaster.execute(options.input, {
     outputPath,
     reportFormats,
+    csvConfig: {
+      tolerantMode: options.tolerant,
+      errorThreshold: options.errorThreshold ? parseFloat(options.errorThreshold) : 0.1,
+      maxRows: options.maxRows ? parseInt(options.maxRows) : undefined
+    },
     progressCallback: (processed: number, total: number) => {
       const percentage = Math.round((processed / total) * 100);
       console.log(chalk.blue(`📊 Progress: ${processed}/${total} (${percentage}%)`));
