@@ -1,11 +1,11 @@
-import { access, constants } from 'fs/promises';
 import { spawn } from 'child_process';
+import { access, constants } from 'fs/promises';
 import { Logger } from '../core/logger.js';
 import type {
-  LLMResponse,
-  LLMSettings,
-  ValidationDecisionRequest,
-  ValidationDecisionResponse
+    LLMResponse,
+    LLMSettings,
+    ValidationDecisionRequest,
+    ValidationDecisionResponse
 } from '../types/index.js';
 
 export interface LLMEngineOptions {
@@ -26,7 +26,16 @@ export class LocalLLMEngine {
 
   constructor(options: LLMEngineOptions) {
     this.logger = Logger.getInstance();
-    this.settings = options.settings;
+    this.settings = {
+      ...options.settings,
+      // Configurações otimizadas para modelos pequenos
+      modelPath: options.settings.modelPath || './models/phi-3-mini-4k-instruct.Q4_K_M.gguf',
+      contextSize: Math.min(options.settings.contextSize || 2048, 2048), // Máximo 2048 para estabilidade
+      batchSize: Math.min(options.settings.batchSize || 128, 128), // Batch menor
+      threads: Math.min(options.settings.threads || 3, 3), // Threads limitadas
+      temperature: options.settings.temperature || 0.1,
+      maxTokens: Math.min(options.settings.maxTokens || 10, 10) // Respostas muito curtas
+    };
   }
 
   /**
@@ -73,10 +82,10 @@ export class LocalLLMEngine {
         this.initialized = true;
       } else {
         this.logger.warn('⚠️ Servidor LLM não encontrado, tentando iniciar automaticamente...');
-        
+
         // Try to start the server automatically
         const serverStarted = await this.attemptToStartServer();
-        
+
         if (serverStarted) {
           this.logger.info('🚀 Servidor LLM iniciado com sucesso, conectando...', {
             serverUrl: this.workingServerUrl
@@ -133,7 +142,7 @@ export class LocalLLMEngine {
       for (const url of serverUrls) {
         try {
           this.logger.debug(`🌐 Verificando servidor LLM em: ${url}`);
-          
+
           const startTime = Date.now();
           const response = await fetch(url, {
             method: 'GET',
@@ -214,20 +223,20 @@ export class LocalLLMEngine {
         workingDirectory: process.cwd(),
         timestamp: new Date().toISOString()
       });
-      
+
       // Check if the server script exists
       const serverScript = 'llm-server.py';
       try {
         await access(serverScript, constants.F_OK);
         this.logger.info('✅ Script do servidor LLM encontrado', { path: serverScript });
       } catch {
-        this.logger.error('❌ Script do servidor LLM não encontrado', { 
+        this.logger.error('❌ Script do servidor LLM não encontrado', {
           expectedPath: serverScript,
           currentDir: process.cwd()
         });
         return false;
       }
-      
+
       // Start the server process
       this.logger.info('🔧 Iniciando processo do servidor LLM...');
       const serverProcess = spawn('python3', ['llm-server.py'], {
@@ -267,7 +276,7 @@ export class LocalLLMEngine {
       // Check if the server is now running
       this.logger.info('🔍 Verificando se o servidor iniciou com sucesso...');
       const serverRunning = await this.checkLLMServer();
-      
+
       if (serverRunning) {
         this.logger.info('✅ Servidor LLM iniciado com sucesso automaticamente!', {
           serverUrl: this.workingServerUrl,
@@ -279,7 +288,7 @@ export class LocalLLMEngine {
           pid: serverProcess.pid,
           timeWaited: '5 segundos'
         });
-        
+
         // Try to kill the process if it's still running
         try {
           if (!serverProcess.killed) {
@@ -291,11 +300,11 @@ export class LocalLLMEngine {
             error: killError instanceof Error ? killError.message : 'Erro desconhecido'
           });
         }
-        
+
         return false;
       }
     } catch (error) {
-      this.logger.error('💥 Falha crítica ao tentar iniciar servidor LLM', { 
+      this.logger.error('💥 Falha crítica ao tentar iniciar servidor LLM', {
         error: error instanceof Error ? error.message : 'Erro desconhecido',
         stack: error instanceof Error ? error.stack : undefined,
         timestamp: new Date().toISOString()
@@ -379,7 +388,7 @@ export class LocalLLMEngine {
       validateSpecific: async (request: ValidationDecisionRequest) => {
         const maxRetries = 3;
         let lastError: Error | null = null;
-        
+
         this.logger.info('🔍 Iniciando validação específica', {
           fieldName: request.fieldName,
           fieldType: request.fieldType,
@@ -387,7 +396,7 @@ export class LocalLLMEngine {
           webValue: request.webValue?.toString().substring(0, 100) + (request.webValue?.toString().length > 100 ? '...' : ''),
           maxRetries
         });
-        
+
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
             const url = `${baseUrl}/validate`;
@@ -397,21 +406,21 @@ export class LocalLLMEngine {
               field_type: request.fieldType,
               field_name: request.fieldName
             };
-            
-            this.logger.info(`🌐 Fazendo requisição de validação (tentativa ${attempt}/${maxRetries})`, { 
-              url, 
+
+            this.logger.info(`🌐 Fazendo requisição de validação (tentativa ${attempt}/${maxRetries})`, {
+              url,
               attempt,
               fieldName: request.fieldName,
               payloadSize: JSON.stringify(payload).length
             });
-            
+
             // Add a small delay between retries
             if (attempt > 1) {
               const delay = 1000 * attempt;
               this.logger.info(`⏱️ Aguardando ${delay}ms antes da nova tentativa...`);
               await new Promise(resolve => setTimeout(resolve, delay));
             }
-            
+
             // Check if server is still alive before making request
             this.logger.debug('🩺 Verificando saúde do servidor antes da requisição...');
             try {
@@ -421,11 +430,11 @@ export class LocalLLMEngine {
                 signal: AbortSignal.timeout(5000)
               });
               const healthTime = Date.now() - healthStart;
-              
+
               if (!healthResponse.ok) {
                 throw new Error(`Health check retornou status ${healthResponse.status}`);
               }
-              
+
               const healthData = await healthResponse.json();
               this.logger.debug(`✅ Servidor saudável`, {
                 responseTime: `${healthTime}ms`,
@@ -437,7 +446,7 @@ export class LocalLLMEngine {
               this.logger.error('💔 ' + errorMsg);
               throw new Error(errorMsg);
             }
-            
+
             // Use dedicated /validate endpoint
             this.logger.debug('📤 Enviando requisição de validação...');
             const requestStart = Date.now();
@@ -464,7 +473,7 @@ export class LocalLLMEngine {
             }
 
             const data = await response.json() as any;
-            
+
             this.logger.info('✅ Validação concluída com sucesso', {
               attempt,
               responseTime: `${requestTime}ms`,
@@ -485,8 +494,8 @@ export class LocalLLMEngine {
             };
           } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
-            
-            this.logger.warn(`⚠️ Requisição de validação falhou (tentativa ${attempt}/${maxRetries})`, { 
+
+            this.logger.warn(`⚠️ Requisição de validação falhou (tentativa ${attempt}/${maxRetries})`, {
               error: lastError.message,
               errorType: lastError.constructor.name,
               url: `${baseUrl}/validate`,
@@ -494,18 +503,18 @@ export class LocalLLMEngine {
               willRetry: attempt < maxRetries,
               fieldName: request.fieldName
             });
-            
+
             // If this was the last attempt, break and throw
             if (attempt === maxRetries) {
               break;
             }
-            
+
             // Continue to next retry
           }
         }
-        
+
         // All retries failed
-        this.logger.error('❌ Todas as tentativas de validação falharam', { 
+        this.logger.error('❌ Todas as tentativas de validação falharam', {
           error: lastError?.message,
           errorType: lastError?.constructor.name,
           url: `${baseUrl}/validate`,
@@ -513,19 +522,19 @@ export class LocalLLMEngine {
           fieldName: request.fieldName,
           timestamp: new Date().toISOString()
         });
-        
+
         if (lastError && lastError.name === 'AbortError') {
           const errorMsg = 'Requisição de validação LLM expirou após todas as tentativas';
           this.logger.error('⏰ ' + errorMsg);
           throw new Error(errorMsg);
         }
-        
+
         if (lastError && lastError.message.includes('fetch failed')) {
           const errorMsg = `Requisição de validação LLM falhou: Não foi possível conectar ao servidor em ${baseUrl}/validate após ${maxRetries} tentativas`;
           this.logger.error('🔌 ' + errorMsg);
           throw new Error(errorMsg);
         }
-        
+
         const errorMsg = `Requisição de validação LLM falhou após ${maxRetries} tentativas: ${lastError?.message || 'Erro desconhecido'}`;
         this.logger.error('💥 ' + errorMsg);
         throw new Error(errorMsg);
@@ -596,12 +605,12 @@ export class LocalLLMEngine {
         normalizedWebValue: request.webValue,
         issues: [`Erro de processamento LLM: ${error instanceof Error ? error.message : 'Erro desconhecido'}`]
       };
-      
+
       this.logger.info('🔄 Retornando decisão de fallback', {
         fieldName: request.fieldName,
         fallbackDecision
       });
-      
+
       return fallbackDecision;
     }
   }
@@ -633,8 +642,8 @@ export class LocalLLMEngine {
       });
       return this.buildValidationDecision(parsed, request);
     } catch (error) {
-      this.logger.debug('⚠️ Parsing direto de JSON falhou, tentando métodos de extração', { 
-        error: error instanceof Error ? error.message : 'Erro desconhecido' 
+      this.logger.debug('⚠️ Parsing direto de JSON falhou, tentando métodos de extração', {
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
       });
 
       // Try to extract JSON from text using regex
@@ -649,9 +658,9 @@ export class LocalLLMEngine {
           });
           return this.buildValidationDecision(parsed, request);
         } catch (e) {
-          this.logger.debug('❌ Parsing de JSON extraído falhou', { 
-            extractedJson: extractedJson.substring(0, 100), 
-            error: e instanceof Error ? e.message : 'Erro desconhecido' 
+          this.logger.debug('❌ Parsing de JSON extraído falhou', {
+            extractedJson: extractedJson.substring(0, 100),
+            error: e instanceof Error ? e.message : 'Erro desconhecido'
           });
         }
       }
@@ -668,9 +677,9 @@ export class LocalLLMEngine {
           });
           return this.buildValidationDecision(parsed, request);
         } catch (e) {
-          this.logger.debug('❌ Parsing de JSON corrigido falhou', { 
-            fixedJson: fixedJson.substring(0, 100), 
-            error: e instanceof Error ? e.message : 'Erro desconhecido' 
+          this.logger.debug('❌ Parsing de JSON corrigido falhou', {
+            fixedJson: fixedJson.substring(0, 100),
+            error: e instanceof Error ? e.message : 'Erro desconhecido'
           });
         }
       }

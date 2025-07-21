@@ -47,3 +47,32 @@ htmlcov/
 *.db
 data/
 models/
+
+# Temporary and backup files
+*.tmp
+*.temp
+*.backup.*
+*.bak
+*~
+
+# Test results and coverage
+coverage/
+test-results*/
+*.lcov
+lcov.info
+
+# IDE files
+.cursor/
+.claude/
+
+# Python virtual environments
+ocr-test-env/
+
+# LLM server logs
+llm-server*.log
+
+# Test artifacts
+test-without-llm.py
+test-*.js
+test-*.py
+test-*.mjs

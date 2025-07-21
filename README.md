@@ -362,3 +362,33 @@ npm run dev
   <strong>🦅 DataHawk - Transforming manual QA into autonomous intelligence</strong><br>
   <em>Built with ❤️ for the open-source community</em>
 </p>
+
+## 🤖 Modelos LLM Recomendados
+
+O DataHawk agora suporta modelos menores e mais estáveis:
+
+| Modelo | Tamanho | RAM Necessária | Melhor Para |
+|--------|---------|----------------|-------------|
+| TinyLlama 1.1B | ~0.8GB | 2GB | Validações rápidas, RAM limitada |
+| Qwen 1.8B | ~1.2GB | 3GB | Raciocínio numérico, comparações |
+| Gemma 2B | ~1.5GB | 3.5GB | Português, validações complexas |
+| Phi-3 Mini | ~2.7GB | 4GB | Qualidade superior geral |
+
+### Download Automático
+
+```bash
+# Baixar modelos recomendados
+chmod +x scripts/download-recommended-models.sh
+./scripts/download-recommended-models.sh
+```
+
+### Servidor LLM de Produção
+
+```bash
+# Iniciar servidor LLM otimizado
+python3 llm-server-production.py
+
+# Verificar modelos disponíveis
+curl http://localhost:8000/models
+```
+

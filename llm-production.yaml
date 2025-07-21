@@ -1,0 +1,47 @@
+# Configuração LLM de Produção - DataHawk
+# Otimizada para modelos pequenos e estáveis
+
+llm:
+  # Servidor de produção
+  server:
+    url: "http://localhost:8000"
+    health_check_interval: 30 # segundos
+    timeout: 10 # segundos
+    max_retries: 3
+
+  # Modelos suportados (em ordem de preferência)
+  models:
+    - name: "tinyllama"
+      path: "models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+      memory_gb: 1.5
+      description: "Ultra rápido, baixo consumo"
+
+    - name: "qwen-1.8b"
+      path: "models/qwen1.5-1.8b-chat.Q4_K_M.gguf"
+      memory_gb: 2.0
+      description: "Bom para raciocínio numérico"
+
+    - name: "gemma-2b"
+      path: "models/gemma-2b-it.Q4_K_M.gguf"
+      memory_gb: 2.5
+      description: "Equilibrado, bom PT-BR"
+
+    - name: "phi3-mini"
+      path: "models/phi-3-mini-4k-instruct.Q4_K_M.gguf"
+      memory_gb: 3.5
+      description: "Qualidade superior"
+
+  # Configurações otimizadas
+  settings:
+    context_size: 2048
+    batch_size: 128
+    threads: 3
+    temperature: 0.1
+    max_tokens: 10
+
+  # Validação específica
+  validation:
+    enable_fallback: true
+    confidence_threshold: 0.7
+    max_prompt_length: 200
+    simple_prompts: true # Para modelos pequenos

@@ -307,12 +307,12 @@ export class CrewOrchestrator {
         settings: {
           modelPath: './models/llama3-8b-instruct.Q4_K_M.gguf',
           fallbackModelPath: './models/phi-3-mini-4k-instruct.Q4_K_M.gguf',
-          contextSize: 8192,
+          contextSize: 2048,
           threads: 4,
-          batchSize: 512,
+          batchSize: 128,
           gpuLayers: 0,
           temperature: 0.1,
-          maxTokens: 1024
+          maxTokens: 10
         }
       });
       await this.llmEngine.initialize();

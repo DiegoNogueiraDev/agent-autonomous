@@ -60,12 +60,12 @@ export class TaskmasterController {
     // Initialize LLM engine with default settings
     const llmSettings: LLMSettings = {
       modelPath: './models/mistral-7b-instruct-q4_k_m.gguf',
-      contextSize: 4096,
-      batchSize: 512,
-      threads: 4,
+      contextSize: 2048,
+      batchSize: 128,
+      threads: 3,
       gpuLayers: 0,
       temperature: 0.1,
-      maxTokens: 512
+      maxTokens: 10
     };
 
     this.llmEngine = new LocalLLMEngine({ settings: llmSettings });
